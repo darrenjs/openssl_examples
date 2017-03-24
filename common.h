@@ -11,12 +11,9 @@ it under the terms of the MIT license. See LICENSE for details.
 #include <openssl/ssl.h>
 
 #include <arpa/inet.h>
-#include <errno.h>
 #include <poll.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -160,7 +157,7 @@ enum sslstatus do_ssl_handshake()
       if (n > 0)
         queue_encrypted_bytes(buf, n);
       else if (!BIO_should_retry(client.wbio))
-        return -1;
+        return SSLSTATUS_FAIL;
     } while (n>0);
 
   return status;
@@ -178,7 +175,7 @@ int on_read_cb(char* src, size_t len)
     n = BIO_write(client.rbio, src, len);
 
     if (n<=0)
-      return -1;
+      return -1; /* assume bio write failure is unrecoverable */
 
     src += n;
     len -= n;

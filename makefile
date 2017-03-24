@@ -6,8 +6,7 @@
 #
 
 
-CXXFLAGS += -MMD -MP
-CXXFLAGS += -Wall -O0 -g3 -ggdb -std=c++11 -pthread
+CFLAGS += -MMD -MP -Wall -O0 -g3 -ggdb
 
 LDLIBS += -lcrypto -lssl
 
