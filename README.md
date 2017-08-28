@@ -27,6 +27,12 @@ To compile the program, use something like:
     gcc -Wall -O0 -g3 -std=c99 -lcrypto -lssl -o ssl_server_nonblock ssl_server_nonblock.c
 ```
 
+Or on MacOS:
+
+```console
+ gcc -Wall -O0 -g3 -std=c99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -lcrypto  -o ssl_server_nonblock ssl_server_nonblock.c
+ ```
+
 Or just try the makefile, for Linux platforms.
 
 Running
