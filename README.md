@@ -24,7 +24,7 @@ Compilation
 To compile the program, use something like:
 
 ```console
-    gcc -Wall -O0 -g3 -std=c99 -lcrypto -lssl -o ssl_server_nonblock ssl_server_nonblock.c
+    gcc ssl_server_nonblock.c -Wall -O0 -g3 -std=c99 -lcrypto -lssl -o ssl_server_nonblock 
 ```
 
 Or on MacOS:
