@@ -13,7 +13,11 @@
 # Ignore dotfiles
 .*.*
 
-*.[0-9]*
+# Ignore keys
+*.crt
+*.csr
+*.key
+*.pem
 
 # Prerequisites
 *.d
