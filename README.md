@@ -24,7 +24,7 @@ Compilation
 To compile the program, use something like:
 
 ```console
-    gcc ssl_server_nonblock.c -Wall -O0 -g3 -std=c99 -lcrypto -lssl -o ssl_server_nonblock 
+    gcc ssl_server_nonblock.c -Wall -O0 -g3 -std=c99 -lcrypto -lssl -o ssl_server_nonblock
 ```
 
 Or on MacOS:
@@ -44,8 +44,8 @@ these steps:
 
 1. Generate the private key, this is what we normally keep secret:
 ```console
-    openssl genrsa -des3 -passout pass:x -out server.pass.key 2048
-    openssl rsa -passin pass:x -in server.pass.key -out server.key
+    openssl genrsa -des3 -passout pass:ABCD -out server.pass.key 2048
+    openssl rsa -passin pass:ABCD -in server.pass.key -out server.key
     rm -f server.pass.key
 ```
 2. Next generate the CSR.  We can leave the password empty when prompted
