@@ -17,6 +17,7 @@ it under the terms of the MIT license. See LICENSE for details.
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <string.h>
 
 /* Global SSL context */
 SSL_CTX *ctx;
