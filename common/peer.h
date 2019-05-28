@@ -24,13 +24,19 @@ SSL_CTX *ctx;
 
 #define DEFAULT_BUF_SIZE 64
 
-void handle_error(const char *file, int lineno, const char *msg) {
-  fprintf(stderr, "** %s:%i %s\n", file, lineno, msg);
+void error_kill(const char *file, int lineno, const char *msg) {
+  fprintf(stderr, "%s:%d %s\n", file, lineno, msg);
   ERR_print_errors_fp(stderr);
   exit(-1);
 }
 
-#define int_error(msg) handle_error(__FILE__, __LINE__, msg)
+void error_log(const char *file, int lineno, const char *msg) {
+  fprintf(stderr, "%s:%d %s\n", file, lineno, msg);
+  ERR_print_errors_fp(stderr);
+}
+
+#define LOG_KILL(msg) error_kill(__FILE__, __LINE__, msg)
+#define LOG(msg) error_kill(__FILE__, __LINE__, msg)
 
 void die(const char *msg) {
   perror(msg);
@@ -314,14 +320,14 @@ void ssl_init(const char * certfile, const char* keyfile)
   /* Load certificate and private key files, and check consistency */
   if (certfile && keyfile) {
     if (SSL_CTX_use_certificate_file(ctx, certfile,  SSL_FILETYPE_PEM) != 1)
-      int_error("SSL_CTX_use_certificate_file failed");
+      LOG_KILL("SSL_CTX_use_certificate_file failed");
 
     if (SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-      int_error("SSL_CTX_use_PrivateKey_file failed");
+      LOG_KILL("SSL_CTX_use_PrivateKey_file failed");
 
     /* Make sure the key and certificate file match. */
     if (SSL_CTX_check_private_key(ctx) != 1)
-      int_error("SSL_CTX_check_private_key failed");
+      LOG_KILL("SSL_CTX_check_private_key failed");
     else
       printf("certificate and private key loaded and verified\n");
   }

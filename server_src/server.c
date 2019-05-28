@@ -5,8 +5,7 @@ ssl_examples is free software; you can redistribute it and/or modify
 it under the terms of the MIT license. See LICENSE for details.
 */
 
-#include "common.h"
-
+#include "peer.h"
 
 int main(int argc, char **argv)
 {
