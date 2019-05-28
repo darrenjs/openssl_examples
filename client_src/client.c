@@ -6,11 +6,13 @@ it under the terms of the MIT license. See LICENSE for details.
 */
 
 #include "peer.h"
+#include "config.h"
 
 int main(int argc, char **argv)
 {
-  int port = argc>1? atoi(argv[1]):55555;
-  char* host="127.0.0.1";
+  int port = (argc > 1) ? atoi(argv[1]) : default_port;
+
+  const char * host = default_host;
 
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0)

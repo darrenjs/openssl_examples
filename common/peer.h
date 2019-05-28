@@ -39,6 +39,7 @@ void error_log(const char *file, int lineno, const char *msg) {
 #define LOG(msg) error_kill(__FILE__, __LINE__, msg)
 
 void die(const char *msg) {
+  // FIXME
   perror(msg);
   exit(1);
 }

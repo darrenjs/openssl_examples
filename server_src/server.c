@@ -6,15 +6,16 @@ it under the terms of the MIT license. See LICENSE for details.
 */
 
 #include "peer.h"
+#include "config.h"
 
 int main(int argc, char **argv)
 {
   char str[INET_ADDRSTRLEN];
-  int port = (argc>1)? atoi(argv[1]):55555;
+  int port = (argc > 1) ? atoi(argv[1]) : default_port;
 
   int servfd = socket(AF_INET, SOCK_STREAM, 0);
   if (servfd < 0)
-    die("socket()");
+    die("socket");
 
   int enable = 1;
   if (setsockopt(servfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0)
@@ -24,7 +25,7 @@ int main(int argc, char **argv)
   struct sockaddr_in servaddr;
   memset(&servaddr, 0, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
-  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  servaddr.sin_addr.s_addr = htonl(INADDR_ANY); // FIXME
   servaddr.sin_port = htons(port);
 
   if (bind(servfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
@@ -43,7 +44,7 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
-  ssl_init("server.crt", "server.key"); // see README to create these files
+  ssl_init(server_cert_path, server_key_path); // see README to create these files
 
   while (1) {
     printf("waiting for next connection on port %d\n", port);
@@ -51,6 +52,7 @@ int main(int argc, char **argv)
     clientfd = accept(servfd, (struct sockaddr *)&peeraddr, &peeraddr_len);
     if (clientfd < 0)
       die("accept()");
+
 
     ssl_client_init(&client, clientfd, SSLMODE_SERVER);
 
