@@ -39,3 +39,4 @@ int peer_create(peer_t * const, SSL_CTX *, int fd, buf_operator_t, bool server);
 int peer_delete(peer_t * const);
 
 bool peer_valid(const peer_t * const);
+bool peer_want_write(peer_t *peer);

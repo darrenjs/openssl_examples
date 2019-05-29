@@ -24,6 +24,7 @@ it under the terms of the MIT license. See LICENSE for details.
 
 /* Global SSL context */
 SSL_CTX *ctx;
+peer_t client;
 
 #define DEFAULT_BUF_SIZE 64
 
@@ -31,7 +32,6 @@ void print_unencrypted_data(uint8_t *buf, ssize_t len) {
   printf("%.*s", (int)len, (char *) buf);
 }
 
-peer_t client;
 
 void ssl_client_init(peer_t *p,
                      int fd,
@@ -40,15 +40,12 @@ void ssl_client_init(peer_t *p,
   peer_create(p, ctx, fd, print_unencrypted_data, mode);
 }
 
-int ssl_client_want_write(peer_t *cp) {
-  return (cp->write_len>0);
-}
 
 /* Obtain the return value of an SSL operation and convert into a simplified
  * error code, which is easier to examine for failure. */
-enum sslstatus { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL};
+typedef enum { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL} ssl_status_t ;
 
-static enum sslstatus get_sslstatus(SSL* ssl, int n)
+static ssl_status_t get_sslstatus(SSL* ssl, int n)
 {
   switch (SSL_get_error(ssl, n))
   {
@@ -83,10 +80,10 @@ void queue_encrypted_bytes(const uint8_t *buf, ssize_t len)
   client.write_len += len;
 }
 
-enum sslstatus do_ssl_handshake()
+ssl_status_t do_ssl_handshake()
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  enum sslstatus status;
+  ssl_status_t status;
 
   int n = SSL_do_handshake(client.ssl);
   status = get_sslstatus(client.ssl, n);
@@ -109,7 +106,7 @@ enum sslstatus do_ssl_handshake()
 int on_read_cb(uint8_t * src, ssize_t len)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  enum sslstatus status;
+  ssl_status_t status;
   int n;
 
   while (len > 0) {
@@ -164,7 +161,7 @@ int on_read_cb(uint8_t * src, ssize_t len)
 int do_encrypt()
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  enum sslstatus status;
+  ssl_status_t status;
 
   if (!SSL_is_init_finished(client.ssl))
     return 0;

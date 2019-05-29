@@ -50,7 +50,7 @@ int main(int argc, char **argv)
 
   while (1) {
     fdset[1].events &= ~POLLOUT;
-    fdset[1].events |= ssl_client_want_write(&client)? POLLOUT:0;
+    fdset[1].events |= peer_want_write(&client)? POLLOUT:0;
 
     int nready = poll(&fdset[0], 2, -1);
 

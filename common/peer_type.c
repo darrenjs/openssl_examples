@@ -46,3 +46,4 @@ int peer_delete(peer_t * peer)
 }
 
 bool peer_valid(const peer_t * const peer) { return peer->fd != -1; }
+bool peer_want_write(peer_t *peer) { return (peer->write_len>0); }
