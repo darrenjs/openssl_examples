@@ -81,7 +81,7 @@ int peer_encrypt(peer_t *peer)
 int peer_recv(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  ssize_t n = read(peer->fd, buf, sizeof(buf));
+  ssize_t n = read(peer->socket, buf, sizeof(buf));
 
   if (n > 0)
     return push_encrypted_bytes(peer, buf, (size_t)n);
@@ -92,7 +92,7 @@ int peer_recv(peer_t *peer)
 /* Write encrypted bytes to the socket. */
 int peer_send(peer_t *peer)
 {
-  ssize_t n = write(peer->fd, peer->write_buf, peer->write_sz);
+  ssize_t n = write(peer->socket, peer->write_buf, peer->write_sz);
   if (n > 0) {
     if (n < peer->write_sz)
       memmove(peer->write_buf, peer->write_buf+n, peer->write_sz-n);

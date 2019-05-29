@@ -53,9 +53,7 @@ int main(int argc, char **argv)
   int port = (argc > 1) ? atoi(argv[1]) : default_port;
   const char * host = default_host;
 
-  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd < 0)
-    LOG_KILL("socket()");
+  peer_create(&server, client_ctx, false);
 
   /* Specify socket address */
   struct sockaddr_in addr;
@@ -65,8 +63,8 @@ int main(int argc, char **argv)
   if (inet_pton(AF_INET, host, &(addr.sin_addr)) <= 0)
     LOG_KILL("inet_pton()");
 
-  if (connect(sockfd, (struct sockaddr*) &addr, sizeof(addr)) < 0)
-    LOG_KILL("connect()");
+  if (peer_connect(&server, &addr) != 0)
+    LOG_KILL("failed to connect to peer");
 
   struct pollfd fdset[2];
   memset(&fdset, 0, sizeof(fdset));
@@ -74,15 +72,12 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
-  peer_create(&server, client_ctx, sockfd, false);
-
-  fdset[1].fd = sockfd;
+  fdset[1].fd = server.socket;
   fdset[1].events = POLLERR | POLLHUP | POLLNVAL | POLLIN;
 
-  /* event loop */
 
   peer_do_handshake(&server);
-
+  /* event loop */
   while (1) {
     fdset[1].events &= ~POLLOUT;
     fdset[1].events |= (peer_want_write(&server)) ? POLLOUT : 0;

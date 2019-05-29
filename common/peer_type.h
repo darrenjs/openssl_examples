@@ -10,12 +10,14 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 
-#include <stddef.h>
+#include <arpa/inet.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef struct peer_t
 {
-  int fd;
+  int socket;
+  struct sockaddr_in address;
   SSL *ssl;
 
   BIO *rbio; // SSL reads from, we write to
@@ -34,8 +36,13 @@ typedef struct peer_t
   ssize_t  process_sz;
 } peer_t;
 
-int peer_create(peer_t * const, SSL_CTX *, int fd, bool server);
+int peer_create_old(peer_t *peer, SSL_CTX *ctx, int fd, bool server);
+int peer_create(peer_t * const, SSL_CTX *, bool server);
 int peer_delete(peer_t * const);
+int peer_close(peer_t * const);
+
+int peer_connect(peer_t * const, struct sockaddr_in *addr);
+int peer_accept(peer_t * const, int listen_socket);
 
 int peer_queue_to_decrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
 int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
@@ -45,3 +52,5 @@ bool peer_valid(const peer_t * const);
 bool peer_want_write(peer_t *peer);
 bool peer_want_encrypt(peer_t *peer);
 bool peer_want_read(peer_t *peer);
+
+const char * peer_get_addr(const peer_t * const); // static mem

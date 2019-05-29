@@ -92,7 +92,7 @@ int main(int argc, char **argv)
       LOG_KILL("accept()");
 
 
-    peer_create(&client, server_ctx, clientfd, true);
+    peer_create_old(&client, server_ctx, clientfd, true);
 
     inet_ntop(peeraddr.sin_family, &peeraddr.sin_addr, str, INET_ADDRSTRLEN);
     printf("new connection from %s:%d\n", str, ntohs(peeraddr.sin_port));

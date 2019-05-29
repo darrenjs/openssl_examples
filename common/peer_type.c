@@ -7,12 +7,30 @@
 #include <string.h>
 #include <unistd.h>
 
-int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
+int peer_create_old(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
 {
   /* missing stuff */
   memset(peer, 0, sizeof(peer_t));
 
-  peer->fd = fd;
+  peer->socket = fd;
+
+  peer->rbio = BIO_new(BIO_s_mem());
+  peer->wbio = BIO_new(BIO_s_mem());
+  peer->ssl  = SSL_new(ctx);
+
+  if (server)
+    SSL_set_accept_state(peer->ssl);
+  else
+    SSL_set_connect_state(peer->ssl);
+
+  SSL_set_bio(peer->ssl, peer->rbio, peer->wbio);
+  return 0;
+}
+
+int peer_create(peer_t *peer, SSL_CTX *ctx, bool server)
+{
+  /* missing stuff */
+  memset(peer, 0, sizeof(peer_t));
 
   peer->rbio = BIO_new(BIO_s_mem());
   peer->wbio = BIO_new(BIO_s_mem());
@@ -29,11 +47,8 @@ int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
 
 int peer_delete(peer_t * peer)
 {
-  if (! peer_valid(peer)) return 0;
-
-  if (peer->fd != -1)
-    close(peer->fd);
-  peer->fd = -1;
+  if (peer_close(peer) == -1)
+    return -1;
 
   if (peer->ssl)
     SSL_free(peer->ssl);
@@ -48,6 +63,56 @@ int peer_delete(peer_t * peer)
 
   peer->write_buf = peer->encrypt_buf = peer->process_buf = NULL;
   peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
+
+  return 0;
+}
+
+int peer_close(peer_t *peer)
+{
+  if (peer == NULL)
+    return -1;
+
+  if (peer->socket != -1)
+    close(peer->socket);
+
+  peer->socket = -1;
+  return 0;
+}
+
+int peer_connect(peer_t * const peer, struct sockaddr_in *addr)
+{
+  peer->socket = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  if (peer->socket < 0) {
+    perror("socket");
+    LOG("failed to open socket");
+    return -1;
+  }
+
+  peer->address = *addr;
+  errno = 0;
+  while (
+      connect(peer->socket, (struct sockaddr *) &(peer->address), sizeof(struct sockaddr)) == -1
+      && errno == EINPROGRESS
+      );
+
+  if (errno != 0 && errno != EINPROGRESS) {
+    perror("connect");
+    LOG("failed to connect");
+    return -1;
+  }
+
+  return 0;
+}
+
+int peer_accept(peer_t * peer, int listen_socket)
+{
+  socklen_t len = sizeof(struct sockaddr);
+  peer->socket = accept(listen_socket, (struct sockaddr *) &peer->address, &len);
+  if (peer->socket == -1) {
+    perror("accept");
+    LOG("failed to accept");
+    return -1;
+  }
 
   return 0;
 }
@@ -77,7 +142,19 @@ int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
 }
 
 
-bool peer_valid(const peer_t * const peer) { return peer->fd != -1; }
+bool peer_valid(const peer_t * const peer) { return peer->socket != -1; }
 bool peer_want_write(peer_t *peer) { return peer->write_sz > 0; }
 bool peer_want_encrypt(peer_t *peer) { return peer->encrypt_sz > 0; }
 bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
+
+
+const char * peer_get_addr(const peer_t * const peer)
+{
+  static char __address_str[INET_ADDRSTRLEN + 16];
+  char        __str_peer_ipv4[INET_ADDRSTRLEN];
+  inet_ntop(AF_INET, &peer->address.sin_addr, __str_peer_ipv4, INET_ADDRSTRLEN);
+  snprintf(__address_str, INET_ADDRSTRLEN + 15,
+      "%s:%d", __str_peer_ipv4, ntohs(peer->address.sin_port));
+
+  return __address_str;
+}
