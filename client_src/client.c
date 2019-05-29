@@ -50,7 +50,7 @@ int main(int argc, char **argv)
 
   /* event loop */
 
-  do_ssl_handshake(&client);
+  peer_do_handshake(&client);
 
   while (1) {
     fdset[1].events &= ~POLLOUT;
@@ -63,10 +63,10 @@ int main(int argc, char **argv)
 
     int revents = fdset[1].revents;
     if (revents & POLLIN)
-      if (do_sock_read(&client) == -1)
+      if (peer_recv(&client) == -1)
         break;
     if (revents & POLLOUT)
-      if (do_sock_write(&client) == -1)
+      if (peer_send(&client) == -1)
         break;
     if (revents & (POLLERR | POLLHUP | POLLNVAL))
       break;
@@ -75,9 +75,9 @@ int main(int argc, char **argv)
       break;
 #endif
     if (fdset[0].revents & POLLIN)
-      do_stdin_read(&client);
+      peer_read_from_stdin(&client);
     if (client.encrypt_len>0)
-      do_encrypt(&client);
+      peer_encrypt(&client);
   }
 
   close(fdset[1].fd);

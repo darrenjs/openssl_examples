@@ -14,7 +14,7 @@
 #include <stdbool.h>
 
 // define func type
-typedef void (*buf_operator_t)(uint8_t *, ssize_t);
+typedef int (*buf_operator_t)(uint8_t *, ssize_t);
 
 typedef struct peer_t
 {

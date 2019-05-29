@@ -15,26 +15,20 @@
 
 #include "peer_type.h"
 
-void print_unencrypted_data(uint8_t *buf, ssize_t len);
+int print_unencrypted_data(uint8_t *buf, ssize_t len);
 
 /* Obtain the return value of an SSL operation and convert into a simplified
  * error code, which is easier to examine for failure. */
 typedef enum { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL} ssl_status_t ;
 
-void send_unencrypted_bytes(peer_t *peer, const uint8_t *buf, ssize_t len);
+ssl_status_t peer_do_handshake(peer_t *peer);
 
-void queue_encrypted_bytes(peer_t *peer, const uint8_t *buf, ssize_t len);
+int peer_encrypt(peer_t *peer);
 
-ssl_status_t do_ssl_handshake(peer_t *peer);
+int peer_read_from_stdin(peer_t *peer);
 
-int on_read_cb(peer_t *peer, uint8_t * src, ssize_t len);
+int peer_recv(peer_t *peer);
 
-int do_encrypt(peer_t *peer);
-
-void do_stdin_read(peer_t *peer);
-
-int do_sock_read(peer_t *peer);
-
-int do_sock_write(peer_t *peer);
+int peer_send(peer_t *peer);
 
 void ssl_init(SSL_CTX **ctx, const char * certfile, const char * keyfile);
