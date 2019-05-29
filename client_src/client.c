@@ -28,7 +28,6 @@ peer_t server;
 /* ================================================ */
 
 int  setup_signals();
-int  setup_cleaner();
 void shutdown_properly(int code, void *arg);
 void handle_signal_action(int sig_number);
 

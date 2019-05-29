@@ -14,6 +14,8 @@ it under the terms of the MIT license. See LICENSE for details.
 #include <string.h>
 #include <unistd.h>
 
+#include "network_wrappers.h"
+#include "ssl_util.h"
 #include "peer.h"
 #include "config.h"
 #include "macros.h"
@@ -26,7 +28,7 @@ peer_t client;
 /* =============================== */
 
 int setup_signals();
-void shutdown_properly(int code);
+void shutdown_properly(int code, void *arg);
 void handle_signal_action(int sig_number);
 
 int handle_read_from_stdin(peer_t *client);
@@ -36,16 +38,28 @@ int handle_received_message(peer_t *peer);
 
 int main(int argc, char **argv)
 {
+  if (setup_signals() != 0) {
+    LOG_KILL("failed to setup signals");
+  }
+
+  if (init_server_ssl_ctx(&server_ctx) == -1) {
+    LOG_KILL("failed to setup server SSL ctx");
+  }
+
+  if (load_certificates(server_ctx, server_cert_path, server_key_path) == -1){
+    LOG_KILL("failed to load server certificates");
+  }
+
   char str[INET_ADDRSTRLEN];
   int port = (argc > 1) ? atoi(argv[1]) : default_port;
 
   int servfd = socket(AF_INET, SOCK_STREAM, 0);
   if (servfd < 0)
-    die("socket");
+    LOG_KILL("socket");
 
   int enable = 1;
   if (setsockopt(servfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0)
-    die("setsockopt(SO_REUSEADDR)");
+    LOG_KILL("setsockopt(SO_REUSEADDR)");
 
   /* Specify socket address */
   struct sockaddr_in servaddr;
@@ -55,10 +69,10 @@ int main(int argc, char **argv)
   servaddr.sin_port = htons(port);
 
   if (bind(servfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
-    die("bind()");
+    LOG_KILL("bind()");
 
   if (listen(servfd, 128) < 0)
-    die("listen()");
+    LOG_KILL("listen()");
 
   int clientfd;
   struct sockaddr_in peeraddr;
@@ -70,14 +84,12 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
-  ssl_init(&server_ctx, server_cert_path, server_key_path); // see README to create these files
-
   while (1) {
     printf("waiting for next connection on port %d\n", port);
 
     clientfd = accept(servfd, (struct sockaddr *)&peeraddr, &peeraddr_len);
     if (clientfd < 0)
-      die("accept()");
+      LOG_KILL("accept()");
 
 
     peer_create(&client, server_ctx, clientfd, true);
@@ -124,11 +136,59 @@ int main(int argc, char **argv)
       if (peer_want_read(&client))
         handle_received_message(&client);
     }
-
     peer_delete(&client);
   }
 
   return 0;
+}
+
+/* ========================== */
+
+void handle_signal_action(int sig_number)
+{
+  if (sig_number == SIGINT) {
+    fprintf(stderr, "\n\nSIGINT was catched!\n");
+    exit(EXIT_SUCCESS);
+  }
+  else if (sig_number == SIGPIPE) {
+    fprintf(stderr, "\n\nSIGPIPE was catched!\n");
+    exit(EXIT_SUCCESS);
+  }
+}
+
+/* ========================== */
+
+int setup_signals()
+{
+  struct sigaction sa;
+  sa.sa_handler = handle_signal_action;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_NODEFER;
+  if (sigaction(SIGINT, &sa, 0) != 0) {
+    perror("sigaction()");
+    return -1;
+  }
+  if (sigaction(SIGPIPE, &sa, 0) != 0) {
+    perror("sigaction()");
+    return -1;
+  }
+
+  if (on_exit(shutdown_properly, NULL) != 0) {
+    perror("on_exit()");
+    return -1;
+  }
+
+  return 0;
+}
+
+/* ========================== */
+
+void shutdown_properly(int code, void *__)
+{
+  peer_delete(&client);
+  fputs("Shutdown server properly.\n", stderr);
+  close_ssl_ctx(server_ctx);
+  _exit(code);
 }
 
 /* ============================== */

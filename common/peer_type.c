@@ -29,8 +29,15 @@ int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
 
 int peer_delete(peer_t * peer)
 {
-  close(peer->fd);
-  SSL_free(peer->ssl);
+  if (! peer_valid(peer)) return 0;
+
+  if (peer->fd != -1)
+    close(peer->fd);
+  peer->fd = -1;
+
+  if (peer->ssl)
+    SSL_free(peer->ssl);
+  peer->ssl = NULL;
 
   if (peer->write_buf)
     free(peer->write_buf);
@@ -71,6 +78,6 @@ int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
 
 
 bool peer_valid(const peer_t * const peer) { return peer->fd != -1; }
-bool peer_want_write(peer_t *peer) { return (peer->write_sz > 0); }
-bool peer_want_encrypt(peer_t *peer) { return (peer->encrypt_sz > 0); }
-bool peer_want_read(peer_t *peer) { return (peer->process_sz > 0); }
+bool peer_want_write(peer_t *peer) { return peer->write_sz > 0; }
+bool peer_want_encrypt(peer_t *peer) { return peer->encrypt_sz > 0; }
+bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
