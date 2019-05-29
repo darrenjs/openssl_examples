@@ -15,8 +15,6 @@
 
 #include "peer_type.h"
 
-int print_unencrypted_data(uint8_t *buf, ssize_t len);
-
 /* Obtain the return value of an SSL operation and convert into a simplified
  * error code, which is easier to examine for failure. */
 typedef enum { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL} ssl_status_t ;
@@ -24,8 +22,6 @@ typedef enum { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL} ssl_status_t ;
 ssl_status_t peer_do_handshake(peer_t *peer);
 
 int peer_encrypt(peer_t *peer);
-
-int peer_read_from_stdin(peer_t *peer);
 
 int peer_recv(peer_t *peer);
 

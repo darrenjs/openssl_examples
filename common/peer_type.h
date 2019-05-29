@@ -13,9 +13,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-// define func type
-typedef int (*buf_operator_t)(uint8_t *, ssize_t);
-
 typedef struct peer_t
 {
   int fd;
@@ -32,11 +29,17 @@ typedef struct peer_t
   uint8_t *encrypt_buf;
   ssize_t  encrypt_len;
 
-  buf_operator_t io_on_read;
+  // waiting to be processed
+  uint8_t *processing_buf;
+  ssize_t  processing_len;
 } peer_t;
 
-int peer_create(peer_t * const, SSL_CTX *, int fd, buf_operator_t, bool server);
+int peer_create(peer_t * const, SSL_CTX *, int fd, bool server);
 int peer_delete(peer_t * const);
+
+int peer_queue_to_decrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
+int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
+int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len);
 
 bool peer_valid(const peer_t * const);
 bool peer_want_write(peer_t *peer);

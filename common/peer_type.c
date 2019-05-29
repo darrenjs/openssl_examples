@@ -6,7 +6,7 @@
 #include "macros.h"
 #include <string.h>
 
-int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, buf_operator_t op, bool server)
+int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
 {
   /* missing stuff */
   memset(peer, 0, sizeof(peer_t));
@@ -23,8 +23,6 @@ int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, buf_operator_t op, bool serv
     SSL_set_connect_state(peer->ssl);
 
   SSL_set_bio(peer->ssl, peer->rbio, peer->wbio);
-
-  peer->io_on_read = op;
   return 0;
 }
 
@@ -44,6 +42,31 @@ int peer_delete(peer_t * peer)
 
   return 0;
 }
+
+static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz,
+             const uint8_t * src_buf, ssize_t src_sz)
+{
+  *dst_buf = realloc(*dst_buf, *dst_sz + src_sz);
+  memcpy(*dst_buf + *dst_sz, src_buf, src_sz);
+  *dst_sz += src_sz;
+  return 0;
+}
+
+int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len)
+{
+  return __queue(&peer->encrypt_buf, &peer->encrypt_len, buf, len);
+}
+
+int peer_queue_to_decrypt(peer_t *peer, const uint8_t *buf, ssize_t len)
+{
+  return __queue(&peer->write_buf, &peer->write_len, buf, len);
+}
+
+int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
+{
+  return __queue(&peer->processing_buf, &peer->processing_len, buf, len);
+}
+
 
 bool peer_valid(const peer_t * const peer) { return peer->fd != -1; }
 bool peer_want_write(peer_t *peer) { return (peer->write_len>0); }
