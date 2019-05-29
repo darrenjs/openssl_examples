@@ -7,6 +7,10 @@ it under the terms of the MIT license. See LICENSE for details.
 
 #include "peer.h"
 #include "config.h"
+#include "macros.h"
+
+SSL_CTX *ctx;
+peer_t client;
 
 int main(int argc, char **argv)
 {
@@ -35,8 +39,8 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
-  ssl_init(0,0);
-  ssl_client_init(&client, sockfd, false);
+  ssl_init(&ctx, 0, 0);
+  peer_create(&client, ctx, sockfd, print_unencrypted_data, false);
 
   fdset[1].fd = sockfd;
   fdset[1].events = POLLERR | POLLHUP | POLLNVAL | POLLIN;
@@ -46,11 +50,11 @@ int main(int argc, char **argv)
 
   /* event loop */
 
-  do_ssl_handshake();
+  do_ssl_handshake(&client);
 
   while (1) {
     fdset[1].events &= ~POLLOUT;
-    fdset[1].events |= peer_want_write(&client)? POLLOUT:0;
+    fdset[1].events |= (peer_want_write(&client)) ? POLLOUT : 0;
 
     int nready = poll(&fdset[0], 2, -1);
 
@@ -59,10 +63,10 @@ int main(int argc, char **argv)
 
     int revents = fdset[1].revents;
     if (revents & POLLIN)
-      if (do_sock_read() == -1)
+      if (do_sock_read(&client) == -1)
         break;
     if (revents & POLLOUT)
-      if (do_sock_write() == -1)
+      if (do_sock_write(&client) == -1)
         break;
     if (revents & (POLLERR | POLLHUP | POLLNVAL))
       break;
@@ -71,9 +75,9 @@ int main(int argc, char **argv)
       break;
 #endif
     if (fdset[0].revents & POLLIN)
-      do_stdin_read();
+      do_stdin_read(&client);
     if (client.encrypt_len>0)
-      do_encrypt();
+      do_encrypt(&client);
   }
 
   close(fdset[1].fd);

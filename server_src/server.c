@@ -7,6 +7,11 @@ it under the terms of the MIT license. See LICENSE for details.
 
 #include "peer.h"
 #include "config.h"
+#include "macros.h"
+
+
+SSL_CTX *ctx;
+peer_t client;
 
 int main(int argc, char **argv)
 {
@@ -44,7 +49,7 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
-  ssl_init(server_cert_path, server_key_path); // see README to create these files
+  ssl_init(&ctx, server_cert_path, server_key_path); // see README to create these files
 
   while (1) {
     printf("waiting for next connection on port %d\n", port);
@@ -54,7 +59,7 @@ int main(int argc, char **argv)
       die("accept()");
 
 
-    ssl_client_init(&client, clientfd, true);
+    peer_create(&client, ctx, clientfd, print_unencrypted_data, true);
 
     inet_ntop(peeraddr.sin_family, &peeraddr.sin_addr, str, INET_ADDRSTRLEN);
     printf("new connection from %s:%d\n", str, ntohs(peeraddr.sin_port));
@@ -79,10 +84,10 @@ int main(int argc, char **argv)
 
       int revents = fdset[1].revents;
       if (revents & POLLIN)
-        if (do_sock_read() == -1)
+        if (do_sock_read(&client) == -1)
           break;
       if (revents & POLLOUT)
-        if (do_sock_write() == -1)
+        if (do_sock_write(&client) == -1)
           break;
       if (revents & (POLLERR | POLLHUP | POLLNVAL))
         break;
@@ -91,9 +96,9 @@ int main(int argc, char **argv)
         break;
 #endif
       if (fdset[0].revents & POLLIN)
-        do_stdin_read();
+        do_stdin_read(&client);
       if (client.encrypt_len>0)
-        do_encrypt();
+        do_encrypt(&client);
     }
 
     close(fdset[1].fd);
