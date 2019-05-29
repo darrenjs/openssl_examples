@@ -183,7 +183,7 @@ int on_read_cb(uint8_t * src, ssize_t len)
     do {
       n = SSL_read(client.ssl, buf, sizeof(buf));
       if (n > 0)
-        client.io_on_read(buf, (ssize_t)n);
+        client.io_on_read(buf, n);
     } while (n > 0);
 
     status = get_sslstatus(client.ssl, n);
@@ -224,7 +224,7 @@ int do_encrypt()
 
     if (n>0) {
       /* consume the waiting bytes that have been used by SSL */
-      if ((ssize_t)n<client.encrypt_len)
+      if (n < client.encrypt_len)
         memmove(client.encrypt_buf, client.encrypt_buf+n, client.encrypt_len-n);
       client.encrypt_len -= n;
       client.encrypt_buf = realloc(client.encrypt_buf, client.encrypt_len);
