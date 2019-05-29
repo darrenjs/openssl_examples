@@ -19,33 +19,15 @@ it under the terms of the MIT license. See LICENSE for details.
 #include <unistd.h>
 #include <string.h>
 
+#include "macros.h"
+
 /* Global SSL context */
 SSL_CTX *ctx;
 
 #define DEFAULT_BUF_SIZE 64
 
-void error_kill(const char *file, int lineno, const char *msg) {
-  fprintf(stderr, "%s:%d %s\n", file, lineno, msg);
-  ERR_print_errors_fp(stderr);
-  exit(-1);
-}
-
-void error_log(const char *file, int lineno, const char *msg) {
-  fprintf(stderr, "%s:%d %s\n", file, lineno, msg);
-  ERR_print_errors_fp(stderr);
-}
-
-#define LOG_KILL(msg) error_kill(__FILE__, __LINE__, msg)
-#define LOG(msg) error_kill(__FILE__, __LINE__, msg)
-
-void die(const char *msg) {
-  // FIXME
-  perror(msg);
-  exit(1);
-}
-
-void print_unencrypted_data(char *buf, size_t len) {
-  printf("%.*s", (int)len, buf);
+void print_unencrypted_data(uint8_t *buf, ssize_t len) {
+  printf("%.*s", (int)len, (char *) buf);
 }
 
 /* An instance of this object is created each time a client connection is
@@ -63,15 +45,15 @@ struct ssl_client
   /* Bytes waiting to be written to socket. This is data that has been generated
    * by the SSL object, either due to encryption of user input, or, writes
    * requires due to peer-requested SSL renegotiation. */
-  char* write_buf;
-  size_t write_len;
+  uint8_t * write_buf;
+  ssize_t write_len;
 
   /* Bytes waiting to be encrypted by the SSL object. */
-  char* encrypt_buf;
-  size_t encrypt_len;
+  uint8_t * encrypt_buf;
+  ssize_t encrypt_len;
 
   /* Method to invoke when unencrypted bytes are available. */
-  void (*io_on_read)(char *buf, size_t len);
+  void (*io_on_read)(uint8_t *buf, ssize_t len);
 } client;
 
 /* This enum contols whether the SSL connection needs to initiate the SSL
@@ -134,25 +116,25 @@ static enum sslstatus get_sslstatus(SSL* ssl, int n)
 /* Handle request to send unencrypted data to the SSL.  All we do here is just
  * queue the data into the encrypt_buf for later processing by the SSL
  * object. */
-void send_unencrypted_bytes(const char *buf, size_t len)
+void send_unencrypted_bytes(const uint8_t *buf, ssize_t len)
 {
-  client.encrypt_buf = (char*)realloc(client.encrypt_buf, client.encrypt_len + len);
+  client.encrypt_buf = realloc(client.encrypt_buf, client.encrypt_len + len);
   memcpy(client.encrypt_buf+client.encrypt_len, buf, len);
   client.encrypt_len += len;
 }
 
 /* Queue encrypted bytes. Should only be used when the SSL object has requested a
  * write operation. */
-void queue_encrypted_bytes(const char *buf, size_t len)
+void queue_encrypted_bytes(const uint8_t *buf, ssize_t len)
 {
-  client.write_buf = (char*)realloc(client.write_buf, client.write_len + len);
+  client.write_buf = realloc(client.write_buf, client.write_len + len);
   memcpy(client.write_buf+client.write_len, buf, len);
   client.write_len += len;
 }
 
 enum sslstatus do_ssl_handshake()
 {
-  char buf[DEFAULT_BUF_SIZE];
+  uint8_t buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
 
   int n = SSL_do_handshake(client.ssl);
@@ -173,9 +155,9 @@ enum sslstatus do_ssl_handshake()
 
 /* Process SSL bytes received from the peer. The data needs to be fed into the
    SSL object to be unencrypted.  On success, returns 0, on SSL error -1. */
-int on_read_cb(char* src, size_t len)
+int on_read_cb(uint8_t * src, ssize_t len)
 {
-  char buf[DEFAULT_BUF_SIZE];
+  uint8_t buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
   int n;
 
@@ -201,7 +183,7 @@ int on_read_cb(char* src, size_t len)
     do {
       n = SSL_read(client.ssl, buf, sizeof(buf));
       if (n > 0)
-        client.io_on_read(buf, (size_t)n);
+        client.io_on_read(buf, (ssize_t)n);
     } while (n > 0);
 
     status = get_sslstatus(client.ssl, n);
@@ -230,7 +212,7 @@ int on_read_cb(char* src, size_t len)
  * will be queued for later socket write. */
 int do_encrypt()
 {
-  char buf[DEFAULT_BUF_SIZE];
+  uint8_t buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
 
   if (!SSL_is_init_finished(client.ssl))
@@ -242,10 +224,10 @@ int do_encrypt()
 
     if (n>0) {
       /* consume the waiting bytes that have been used by SSL */
-      if ((size_t)n<client.encrypt_len)
+      if ((ssize_t)n<client.encrypt_len)
         memmove(client.encrypt_buf, client.encrypt_buf+n, client.encrypt_len-n);
       client.encrypt_len -= n;
-      client.encrypt_buf = (char*)realloc(client.encrypt_buf, client.encrypt_len);
+      client.encrypt_buf = realloc(client.encrypt_buf, client.encrypt_len);
 
       /* take the output of the SSL object and queue it for socket write */
       do {
@@ -269,7 +251,7 @@ int do_encrypt()
 /* Read bytes from stdin and queue for later encryption. */
 void do_stdin_read()
 {
-  char buf[DEFAULT_BUF_SIZE];
+  uint8_t buf[DEFAULT_BUF_SIZE];
   ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
   if (n>0)
     send_unencrypted_bytes(buf, (size_t)n);
@@ -278,7 +260,7 @@ void do_stdin_read()
 /* Read encrypted bytes from socket. */
 int do_sock_read()
 {
-  char buf[DEFAULT_BUF_SIZE];
+  uint8_t buf[DEFAULT_BUF_SIZE];
   ssize_t n = read(client.fd, buf, sizeof(buf));
 
   if (n>0)
@@ -292,17 +274,17 @@ int do_sock_write()
 {
   ssize_t n = write(client.fd, client.write_buf, client.write_len);
   if (n>0) {
-    if ((size_t)n<client.write_len)
+    if (n < client.write_len)
       memmove(client.write_buf, client.write_buf+n, client.write_len-n);
     client.write_len -= n;
-    client.write_buf = (char*)realloc(client.write_buf, client.write_len);
+    client.write_buf = realloc(client.write_buf, client.write_len);
     return 0;
   }
   else
     return -1;
 }
 
-void ssl_init(const char * certfile, const char* keyfile)
+void ssl_init(const char * certfile, const char * keyfile)
 {
   printf("initialising SSL\n");
 
