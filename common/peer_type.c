@@ -10,36 +10,21 @@ int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, buf_operator_t op, bool serv
 {
   /* missing stuff */
   memset(peer, 0, sizeof(peer_t));
-  peer->fd = -1; // marks invalid (only gets validated at the end)
 
-  peer->ssl  = SSL_new(ctx);
-  if (!peer->ssl) {
-    LOG("failed to create SSL object");
-    return -1;
-  }
-
+  peer->fd = fd;
 
   peer->rbio = BIO_new(BIO_s_mem());
-  if (!peer->rbio) {
-    LOG("failed to create read BIO");
-    SSL_free(peer->ssl);
-    return -1;
-  }
-
   peer->wbio = BIO_new(BIO_s_mem());
-  if (!peer->wbio) {
-    LOG("failed to create write BIO");
-    SSL_free(peer->ssl);
-    BIO_free(peer->rbio);
-    return -1;
-  }
+  peer->ssl  = SSL_new(ctx);
 
-  if (server)      SSL_set_accept_state(peer->ssl);
-  else /*client*/ SSL_set_connect_state(peer->ssl);
+  if (server)
+    SSL_set_accept_state(peer->ssl);
+  else
+    SSL_set_connect_state(peer->ssl);
 
   SSL_set_bio(peer->ssl, peer->rbio, peer->wbio);
 
-  peer->fd = fd;
+  peer->io_on_read = op;
   return 0;
 }
 

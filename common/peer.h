@@ -20,6 +20,7 @@ it under the terms of the MIT license. See LICENSE for details.
 #include <string.h>
 
 #include "macros.h"
+#include "peer_type.h"
 
 /* Global SSL context */
 SSL_CTX *ctx;
@@ -30,66 +31,16 @@ void print_unencrypted_data(uint8_t *buf, ssize_t len) {
   printf("%.*s", (int)len, (char *) buf);
 }
 
-/* An instance of this object is created each time a client connection is
- * accepted. It stores the client file descriptor, the SSL objects, and data
- * which is waiting to be either written to socket or encrypted. */
-struct ssl_client
-{
-  int fd;
+peer_t client;
 
-  SSL *ssl;
-
-  BIO *rbio; /* SSL reads from, we write to. */
-  BIO *wbio; /* SSL writes to, we read from. */
-
-  /* Bytes waiting to be written to socket. This is data that has been generated
-   * by the SSL object, either due to encryption of user input, or, writes
-   * requires due to peer-requested SSL renegotiation. */
-  uint8_t * write_buf;
-  ssize_t write_len;
-
-  /* Bytes waiting to be encrypted by the SSL object. */
-  uint8_t * encrypt_buf;
-  ssize_t encrypt_len;
-
-  /* Method to invoke when unencrypted bytes are available. */
-  void (*io_on_read)(uint8_t *buf, ssize_t len);
-} client;
-
-/* This enum contols whether the SSL connection needs to initiate the SSL
- * handshake. */
-enum ssl_mode { SSLMODE_SERVER, SSLMODE_CLIENT };
-
-void ssl_client_init(struct ssl_client *p,
+void ssl_client_init(peer_t *p,
                      int fd,
-                     enum ssl_mode mode)
+                     bool mode)
 {
-  memset(p, 0, sizeof(struct ssl_client));
-
-  p->fd = fd;
-
-  p->rbio = BIO_new(BIO_s_mem());
-  p->wbio = BIO_new(BIO_s_mem());
-  p->ssl = SSL_new(ctx);
-
-  if (mode == SSLMODE_SERVER)
-    SSL_set_accept_state(p->ssl);  /* ssl server mode */
-  else if (mode == SSLMODE_CLIENT)
-    SSL_set_connect_state(p->ssl); /* ssl client mode */
-
-  SSL_set_bio(p->ssl, p->rbio, p->wbio);
-
-  p->io_on_read = print_unencrypted_data;
+  peer_create(p, ctx, fd, print_unencrypted_data, mode);
 }
 
-void ssl_client_cleanup(struct ssl_client *p)
-{
-  SSL_free(p->ssl);   /* free the SSL object and its BIO's */
-  free(p->write_buf);
-  free(p->encrypt_buf);
-}
-
-int ssl_client_want_write(struct ssl_client *cp) {
+int ssl_client_want_write(peer_t *cp) {
   return (cp->write_len>0);
 }
 

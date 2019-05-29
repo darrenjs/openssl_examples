@@ -36,7 +36,7 @@ int main(int argc, char **argv)
   fdset[0].events = POLLIN;
 
   ssl_init(0,0);
-  ssl_client_init(&client, sockfd, SSLMODE_CLIENT);
+  ssl_client_init(&client, sockfd, false);
 
   fdset[1].fd = sockfd;
   fdset[1].events = POLLERR | POLLHUP | POLLNVAL | POLLIN;
@@ -77,7 +77,7 @@ int main(int argc, char **argv)
   }
 
   close(fdset[1].fd);
-  ssl_client_cleanup(&client);
+  peer_delete(&client);
 
   return 0;
 }

@@ -54,7 +54,7 @@ int main(int argc, char **argv)
       die("accept()");
 
 
-    ssl_client_init(&client, clientfd, SSLMODE_SERVER);
+    ssl_client_init(&client, clientfd, true);
 
     inet_ntop(peeraddr.sin_family, &peeraddr.sin_addr, str, INET_ADDRSTRLEN);
     printf("new connection from %s:%d\n", str, ntohs(peeraddr.sin_port));
@@ -97,7 +97,7 @@ int main(int argc, char **argv)
     }
 
     close(fdset[1].fd);
-    ssl_client_cleanup(&client);
+    peer_delete(&client);
   }
 
   return 0;
