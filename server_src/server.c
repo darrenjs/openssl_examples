@@ -102,9 +102,6 @@ int main(int argc, char **argv)
     /* event loop */
 
     fdset[1].events = POLLERR | POLLHUP | POLLNVAL | POLLIN;
-#ifdef POLLRDHUP
-    fdset[1].events |= POLLRDHUP;
-#endif
 
     while (1) {
       fdset[1].events &= ~POLLOUT;
@@ -124,10 +121,7 @@ int main(int argc, char **argv)
           break;
       if (revents & (POLLERR | POLLHUP | POLLNVAL))
         break;
-#ifdef POLLRDHUP
-      if (revents & POLLRDHUP)
-        break;
-#endif
+
       if (fdset[0].revents & POLLIN)
         handle_read_from_stdin(&client);
       if (peer_want_encrypt(&client))
