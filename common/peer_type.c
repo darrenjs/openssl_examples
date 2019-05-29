@@ -5,6 +5,7 @@
 #include "peer_type.h"
 #include "macros.h"
 #include <string.h>
+#include <unistd.h>
 
 int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
 {
@@ -28,17 +29,18 @@ int peer_create(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
 
 int peer_delete(peer_t * peer)
 {
+  close(peer->fd);
   SSL_free(peer->ssl);
 
-  if (peer->write_buf) {
+  if (peer->write_buf)
     free(peer->write_buf);
-    peer->write_buf = NULL;
-  }
-
-  if (peer->encrypt_buf) {
+  if (peer->encrypt_buf)
     free(peer->encrypt_buf);
-    peer->encrypt_buf = NULL;
-  }
+  if (peer->process_buf)
+    free(peer->process_buf);
+
+  peer->write_buf = peer->encrypt_buf = peer->process_buf = NULL;
+  peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
 
   return 0;
 }
@@ -54,19 +56,21 @@ static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz,
 
 int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
-  return __queue(&peer->encrypt_buf, &peer->encrypt_len, buf, len);
+  return __queue(&peer->encrypt_buf, &peer->encrypt_sz, buf, len);
 }
 
 int peer_queue_to_decrypt(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
-  return __queue(&peer->write_buf, &peer->write_len, buf, len);
+  return __queue(&peer->write_buf, &peer->write_sz, buf, len);
 }
 
 int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
-  return __queue(&peer->processing_buf, &peer->processing_len, buf, len);
+  return __queue(&peer->process_buf, &peer->process_sz, buf, len);
 }
 
 
 bool peer_valid(const peer_t * const peer) { return peer->fd != -1; }
-bool peer_want_write(peer_t *peer) { return (peer->write_len>0); }
+bool peer_want_write(peer_t *peer) { return (peer->write_sz > 0); }
+bool peer_want_encrypt(peer_t *peer) { return (peer->encrypt_sz > 0); }
+bool peer_want_read(peer_t *peer) { return (peer->process_sz > 0); }

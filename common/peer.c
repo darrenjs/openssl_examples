@@ -47,16 +47,16 @@ int peer_encrypt(peer_t *peer)
   if (!SSL_is_init_finished(peer->ssl))
     return 0;
 
-  while (peer->encrypt_len > 0) {
-    int n = SSL_write(peer->ssl, peer->encrypt_buf, peer->encrypt_len);
+  while (peer_want_encrypt(peer)) {
+    int n = SSL_write(peer->ssl, peer->encrypt_buf, peer->encrypt_sz);
     status = get_sslstatus(peer->ssl, n);
 
     if (n > 0) {
       /* consume the waiting bytes that have been used by SSL */
-      if (n < peer->encrypt_len)
-        memmove(peer->encrypt_buf, peer->encrypt_buf+n, peer->encrypt_len-n);
-      peer->encrypt_len -= n;
-      peer->encrypt_buf = realloc(peer->encrypt_buf, peer->encrypt_len);
+      if (n < peer->encrypt_sz)
+        memmove(peer->encrypt_buf, peer->encrypt_buf+n, peer->encrypt_sz-n);
+      peer->encrypt_sz -= n;
+      peer->encrypt_buf = realloc(peer->encrypt_buf, peer->encrypt_sz);
 
       /* take the output of the SSL object and queue it for socket write */
       do {
@@ -92,12 +92,13 @@ int peer_recv(peer_t *peer)
 /* Write encrypted bytes to the socket. */
 int peer_send(peer_t *peer)
 {
-  ssize_t n = write(peer->fd, peer->write_buf, peer->write_len);
+  ssize_t n = write(peer->fd, peer->write_buf, peer->write_sz);
   if (n > 0) {
-    if (n < peer->write_len)
-      memmove(peer->write_buf, peer->write_buf+n, peer->write_len-n);
-    peer->write_len -= n;
-    peer->write_buf = realloc(peer->write_buf, peer->write_len);
+    if (n < peer->write_sz)
+      memmove(peer->write_buf, peer->write_buf+n, peer->write_sz-n);
+
+    peer->write_sz -= n;
+    peer->write_buf = realloc(peer->write_buf, peer->write_sz);
     return 0;
   }
   else

@@ -118,14 +118,13 @@ int main(int argc, char **argv)
 #endif
       if (fdset[0].revents & POLLIN)
         handle_read_from_stdin(&client);
-      if (client.encrypt_len>0)
+      if (peer_want_encrypt(&client))
         peer_encrypt(&client);
 
-      if (client.processing_len > 0)
+      if (peer_want_read(&client))
         handle_received_message(&client);
     }
 
-    close(fdset[1].fd);
     peer_delete(&client);
   }
 
@@ -147,7 +146,7 @@ int handle_read_from_stdin(peer_t *peer)
 
 int  handle_received_message(peer_t *peer)
 {
-  printf("%.*s", (int)peer->processing_len, (char *) peer->processing_buf);
-  peer->processing_len = 0;
+  printf("%.*s", (int)peer->process_sz, (char *) peer->process_buf);
+  peer->process_sz = 0;
   return 0;
 }

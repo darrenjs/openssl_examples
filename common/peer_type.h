@@ -23,15 +23,15 @@ typedef struct peer_t
 
   // waiting to be written to socket;
   uint8_t *write_buf;
-  ssize_t  write_len;
+  ssize_t  write_sz;
 
   // waiting to be encrypted by SSL object
   uint8_t *encrypt_buf;
-  ssize_t  encrypt_len;
+  ssize_t  encrypt_sz;
 
   // waiting to be processed
-  uint8_t *processing_buf;
-  ssize_t  processing_len;
+  uint8_t *process_buf;
+  ssize_t  process_sz;
 } peer_t;
 
 int peer_create(peer_t * const, SSL_CTX *, int fd, bool server);
@@ -43,3 +43,5 @@ int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len);
 
 bool peer_valid(const peer_t * const);
 bool peer_want_write(peer_t *peer);
+bool peer_want_encrypt(peer_t *peer);
+bool peer_want_read(peer_t *peer);
