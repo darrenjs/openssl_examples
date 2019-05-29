@@ -5,13 +5,34 @@ ssl_examples is free software; you can redistribute it and/or modify
 it under the terms of the MIT license. See LICENSE for details.
 */
 
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
 #include "peer.h"
 #include "config.h"
 #include "macros.h"
 
+/* =============================== */
 
-SSL_CTX *ctx;
+SSL_CTX *server_ctx;
 peer_t client;
+
+/* =============================== */
+
+int setup_signals();
+void shutdown_properly(int code);
+void handle_signal_action(int sig_number);
+
+int handle_read_from_stdin(peer_t *client);
+int handle_received_message(peer_t *peer);
+
+/* =============================== */
 
 int main(int argc, char **argv)
 {
@@ -49,7 +70,7 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
-  ssl_init(&ctx, server_cert_path, server_key_path); // see README to create these files
+  ssl_init(&server_ctx, server_cert_path, server_key_path); // see README to create these files
 
   while (1) {
     printf("waiting for next connection on port %d\n", port);
@@ -59,7 +80,7 @@ int main(int argc, char **argv)
       die("accept()");
 
 
-    peer_create(&client, ctx, clientfd, print_unencrypted_data, true);
+    peer_create(&client, server_ctx, clientfd, true);
 
     inet_ntop(peeraddr.sin_family, &peeraddr.sin_addr, str, INET_ADDRSTRLEN);
     printf("new connection from %s:%d\n", str, ntohs(peeraddr.sin_port));
@@ -96,14 +117,37 @@ int main(int argc, char **argv)
         break;
 #endif
       if (fdset[0].revents & POLLIN)
-        peer_read_from_stdin(&client);
+        handle_read_from_stdin(&client);
       if (client.encrypt_len>0)
         peer_encrypt(&client);
+
+      if (client.processing_len > 0)
+        handle_received_message(&client);
     }
 
     close(fdset[1].fd);
     peer_delete(&client);
   }
 
+  return 0;
+}
+
+/* ============================== */
+
+int handle_read_from_stdin(peer_t *peer)
+{
+  uint8_t buf[DEFAULT_BUF_SIZE];
+  ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+
+  if (n > 0)
+    return peer_queue_to_encrypt(peer, buf, (size_t)n);
+  else
+    return -1;
+}
+
+int  handle_received_message(peer_t *peer)
+{
+  printf("%.*s", (int)peer->processing_len, (char *) peer->processing_buf);
+  peer->processing_len = 0;
   return 0;
 }
