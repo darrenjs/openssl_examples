@@ -16,7 +16,7 @@ ifneq ($(strip $(DEBUG)), no)
   CFLAGS += -g
 endif
 
-SOURCES := $(wildcard *.c)
+SOURCES := $(wildcard *.c wildcard ../common/*.c)
 OBJECTS := $(SOURCES:.c=.o)
 TARGET  := server
 

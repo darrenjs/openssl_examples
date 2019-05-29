@@ -5,7 +5,7 @@ all:
 clean:
 	make -C server_src clean
 	make -C client_src clean
-	rm -f server client
+	rm -f server client vgcore*
 
 certs:
 	openssl genrsa -des3 -passout pass:ABCD -out server.pass.key 2048
