@@ -7,26 +7,6 @@
 #include <string.h>
 #include <unistd.h>
 
-int peer_create_old(peer_t *peer, SSL_CTX *ctx, int fd, bool server)
-{
-  /* missing stuff */
-  memset(peer, 0, sizeof(peer_t));
-
-  peer->socket = fd;
-
-  peer->rbio = BIO_new(BIO_s_mem());
-  peer->wbio = BIO_new(BIO_s_mem());
-  peer->ssl  = SSL_new(ctx);
-
-  if (server)
-    SSL_set_accept_state(peer->ssl);
-  else
-    SSL_set_connect_state(peer->ssl);
-
-  SSL_set_bio(peer->ssl, peer->rbio, peer->wbio);
-  return 0;
-}
-
 int peer_create(peer_t *peer, SSL_CTX *ctx, bool server)
 {
   /* missing stuff */

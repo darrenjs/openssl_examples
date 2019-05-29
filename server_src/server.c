@@ -24,6 +24,7 @@ it under the terms of the MIT license. See LICENSE for details.
 
 SSL_CTX *server_ctx;
 peer_t client;
+int listen_sock;
 
 /* =============================== */
 
@@ -50,33 +51,13 @@ int main(int argc, char **argv)
     LOG_KILL("failed to load server certificates");
   }
 
-  char str[INET_ADDRSTRLEN];
-  int port = (argc > 1) ? atoi(argv[1]) : default_port;
+  const char * hostname = (argc > 1) ? argv[1] : default_host;
+  int listen_port = (argc > 2) ? atoi(argv[2]) : default_port;
+  if (net_start_listen_socket(hostname, &listen_port, &listen_sock) != 0) {
+    LOG_KILL("failed to setup the listen socket");
+  }
 
-  int servfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (servfd < 0)
-    LOG_KILL("socket");
-
-  int enable = 1;
-  if (setsockopt(servfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable)) < 0)
-    LOG_KILL("setsockopt(SO_REUSEADDR)");
-
-  /* Specify socket address */
-  struct sockaddr_in servaddr;
-  memset(&servaddr, 0, sizeof(servaddr));
-  servaddr.sin_family = AF_INET;
-  servaddr.sin_addr.s_addr = htonl(INADDR_ANY); // FIXME
-  servaddr.sin_port = htons(port);
-
-  if (bind(servfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
-    LOG_KILL("bind()");
-
-  if (listen(servfd, 128) < 0)
-    LOG_KILL("listen()");
-
-  int clientfd;
-  struct sockaddr_in peeraddr;
-  socklen_t peeraddr_len = sizeof(peeraddr);
+  peer_create(&client, server_ctx, true);
 
   struct pollfd fdset[2];
   memset(&fdset, 0, sizeof(fdset));
@@ -85,24 +66,31 @@ int main(int argc, char **argv)
   fdset[0].events = POLLIN;
 
   while (1) {
-    printf("waiting for next connection on port %d\n", port);
+    printf("waiting for next connection on port %d\n", listen_port);
 
-    clientfd = accept(servfd, (struct sockaddr *)&peeraddr, &peeraddr_len);
-    if (clientfd < 0)
-      LOG_KILL("accept()");
+    fd_set listen_fds;
+    FD_ZERO(&listen_fds);
+    FD_SET(listen_sock, &listen_fds);
 
+    int ret = 0;
+    while (ret == 0) {
+      ret = select(listen_sock + 1, &listen_fds, NULL, NULL, NULL);
+    }
 
-    peer_create_old(&client, server_ctx, clientfd, true);
+    if (FD_ISSET(listen_sock, &listen_fds)) {
+      if (peer_accept(&client, listen_sock) != 0)
+        LOG_KILL("failed to accept");
+    }
+    else {
+      continue;
+    }
 
-    inet_ntop(peeraddr.sin_family, &peeraddr.sin_addr, str, INET_ADDRSTRLEN);
-    printf("new connection from %s:%d\n", str, ntohs(peeraddr.sin_port));
+    printf("new connection from %s\n", peer_get_addr(&client));
 
-    fdset[1].fd = clientfd;
-
-    /* event loop */
-
+    fdset[1].fd = client.socket;
     fdset[1].events = POLLERR | POLLHUP | POLLNVAL | POLLIN;
 
+    /* event loop */
     while (1) {
       fdset[1].events &= ~POLLOUT;
       fdset[1].events |= (peer_want_write(&client)? POLLOUT : 0);

@@ -36,7 +36,6 @@ typedef struct peer_t
   ssize_t  process_sz;
 } peer_t;
 
-int peer_create_old(peer_t *peer, SSL_CTX *ctx, int fd, bool server);
 int peer_create(peer_t * const, SSL_CTX *, bool server);
 int peer_delete(peer_t * const);
 int peer_close(peer_t * const);
