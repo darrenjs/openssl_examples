@@ -6,12 +6,22 @@
  *  static decls
  * ========================= */
 
-/* Obtain the return value of an SSL operation and convert into a simplified
- * error code, which is easier to examine for failure. */
-typedef enum { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL} ssl_status_t ;
-
-static ssl_status_t get_sslstatus(SSL* ssl, int n);
 static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len);
+
+static inline bool ssl_status_want_io(int status)
+{
+  return status == SSL_ERROR_WANT_WRITE || status == SSL_ERROR_WANT_READ;
+}
+
+static inline bool ssl_status_ok(int status)
+{
+  return status == SSL_ERROR_NONE;
+}
+
+static inline bool ssl_status_fail(int status)
+{
+  return !ssl_status_ok(status) && !ssl_status_want_io(status);
+}
 
 /* =========================
  *  implementation
@@ -20,13 +30,13 @@ static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len);
 int peer_do_handshake(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  ssl_status_t status;
+  int status;
 
   int n = SSL_do_handshake(peer->ssl);
-  status = get_sslstatus(peer->ssl, n);
+  status = SSL_get_error(peer->ssl, n);
 
   /* Did SSL request to write bytes? */
-  if (status == SSLSTATUS_WANT_IO) {
+  if (ssl_status_want_io(status)) {
     do {
       n = BIO_read(peer->wbio, buf, sizeof(buf));
       if (n > 0)
@@ -36,7 +46,7 @@ int peer_do_handshake(peer_t *peer)
     } while (n > 0);
   }
 
-  return (status == SSLSTATUS_OK) ? 0 : -1;
+  return (!ssl_status_fail(status)) ? 0 : -1;
 }
 
 
@@ -47,14 +57,14 @@ int peer_do_handshake(peer_t *peer)
 int peer_encrypt(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  ssl_status_t status;
+  int status;
 
   if (!SSL_is_init_finished(peer->ssl))
     return 0;
 
   while (peer_want_encrypt(peer)) {
     int n = SSL_write(peer->ssl, peer->encrypt_buf, peer->encrypt_sz);
-    status = get_sslstatus(peer->ssl, n);
+    status = SSL_get_error(peer->ssl, n);
 
     if (n > 0) {
       /* consume the waiting bytes that have been used by SSL */
@@ -73,7 +83,7 @@ int peer_encrypt(peer_t *peer)
       } while (n > 0);
     }
 
-    if (status == SSLSTATUS_FAIL)
+    if (ssl_status_fail(status))
       return -1;
 
     if (n == 0)
@@ -110,67 +120,16 @@ int peer_send(peer_t *peer)
     return -1;
 }
 
-void ssl_init(SSL_CTX **ctx, const char * certfile, const char * keyfile)
-{
-  printf("initialising SSL\n");
-
-  /* SSL library initialisation */
-  SSL_library_init();
-  OpenSSL_add_all_algorithms();
-  SSL_load_error_strings();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
-
-  /* create the SSL server context */
-  *ctx = SSL_CTX_new(SSLv23_method());
-  if (!(*ctx))
-    die("SSL_CTX_new()");
-
-  /* Load certificate and private key files, and check consistency */
-  if (certfile && keyfile) {
-    if (SSL_CTX_use_certificate_file(*ctx, certfile,  SSL_FILETYPE_PEM) != 1)
-      LOG_KILL("SSL_CTX_use_certificate_file failed");
-
-    if (SSL_CTX_use_PrivateKey_file(*ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-      LOG_KILL("SSL_CTX_use_PrivateKey_file failed");
-
-    /* Make sure the key and certificate file match. */
-    if (SSL_CTX_check_private_key(*ctx) != 1)
-      LOG_KILL("SSL_CTX_check_private_key failed");
-    else
-      printf("certificate and private key loaded and verified\n");
-  }
-
-  /* Recommended to avoid SSLv2 & SSLv3 */
-  SSL_CTX_set_options(*ctx, SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);
-}
-
 /* =========================
  *  static
  * ========================= */
-
-static ssl_status_t get_sslstatus(SSL* ssl, int n)
-{
-  switch (SSL_get_error(ssl, n))
-  {
-    case SSL_ERROR_NONE:
-      return SSLSTATUS_OK;
-    case SSL_ERROR_WANT_WRITE:
-    case SSL_ERROR_WANT_READ:
-      return SSLSTATUS_WANT_IO;
-    case SSL_ERROR_ZERO_RETURN:
-    case SSL_ERROR_SYSCALL:
-    default:
-      return SSLSTATUS_FAIL;
-  }
-}
 
 /* Process SSL bytes received from the peer. The data needs to be fed into the
    SSL object to be unencrypted.  On success, returns 0, on SSL error -1. */
 static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  ssl_status_t status;
+  int status;
   int n;
 
   while (len > 0) {
@@ -183,7 +142,7 @@ static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len)
     len -= n;
 
     if (!SSL_is_init_finished(peer->ssl)) {
-      if (peer_do_handshake(peer) == SSLSTATUS_FAIL)
+      if (peer_do_handshake(peer) == -1)
         return -1;
       if (!SSL_is_init_finished(peer->ssl))
         return 0;
@@ -198,11 +157,11 @@ static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len)
         peer_queue_to_process(peer, buf, n);
     } while (n > 0);
 
-    status = get_sslstatus(peer->ssl, n);
+    status = SSL_get_error(peer->ssl, n);
 
     /* Did SSL request to write bytes? This can happen if peer has requested SSL
      * renegotiation. */
-    if (status == SSLSTATUS_WANT_IO)
+    if (ssl_status_want_io(status))
       do {
         n = BIO_read(peer->wbio, buf, sizeof(buf));
         if (n > 0)
@@ -211,7 +170,7 @@ static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len)
           return -1;
       } while (n > 0);
 
-    if (status == SSLSTATUS_FAIL)
+    if (ssl_status_fail(status))
       return -1;
   }
 
