@@ -1,10 +1,3 @@
-/*
-Copyright (c) 2017 Darren Smith
-
-ssl_examples is free software; you can redistribute it and/or modify
-it under the terms of the MIT license. See LICENSE for details.
-*/
-
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -40,8 +33,19 @@ int  handle_received_message(peer_t *peer);
 
 int main(int argc, char **argv)
 {
-  const char * hostname = (argc > 1) ? argv[1] : default_host;
-  int server_port = (argc > 2) ? atoi(argv[2]) : default_port;
+  if (argc > 3) {
+    fprintf(stderr, "usage: %s [ip] [port]\n", argv[0]);
+    return -1;
+  }
+
+  const char * ip_addr_str = (argc > 1) ? argv[1] : default_host;
+  int server_port = (argc > 2) ? strtol(argv[2], NULL, 10) : default_port;
+  if (server_port == LONG_MIN || server_port == LONG_MAX || server_port <= 0) {
+    perror("failed to convert value");
+    fprintf(stderr, "usage: %s [ip] [port]\n", argv[0]);
+    return -1;
+  }
+
   if (setup_signals() != 0) {
     LOG_KILL("failed to setup signals");
   }
@@ -59,14 +63,16 @@ int main(int argc, char **argv)
   flag |= O_NONBLOCK;
   fcntl(STDIN_FILENO, F_SETFL, flag);
 
-  peer_create(&server, client_ctx, false);
+  if (peer_create(&server, client_ctx, false) != 0) {
+    LOG_KILL("failed to create peer");
+  }
 
   /* Specify socket address */
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_port = htons(server_port);
-  if (inet_pton(AF_INET, hostname, &(addr.sin_addr)) <= 0)
+  if (inet_pton(AF_INET, ip_addr_str, &(addr.sin_addr)) <= 0)
     LOG_KILL("inet_pton()");
 
   if (peer_connect(&server, &addr) != 0)
