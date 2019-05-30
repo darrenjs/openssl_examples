@@ -6,6 +6,10 @@
  *  static decls
  * ========================= */
 
+/* Obtain the return value of an SSL operation and convert into a simplified
+ * error code, which is easier to examine for failure. */
+typedef enum { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL} ssl_status_t ;
+
 static ssl_status_t get_sslstatus(SSL* ssl, int n);
 static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len);
 
@@ -13,7 +17,7 @@ static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len);
  *  implementation
  * ========================= */
 
-ssl_status_t peer_do_handshake(peer_t *peer)
+int peer_do_handshake(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
   ssl_status_t status;
@@ -22,16 +26,17 @@ ssl_status_t peer_do_handshake(peer_t *peer)
   status = get_sslstatus(peer->ssl, n);
 
   /* Did SSL request to write bytes? */
-  if (status == SSLSTATUS_WANT_IO)
+  if (status == SSLSTATUS_WANT_IO) {
     do {
       n = BIO_read(peer->wbio, buf, sizeof(buf));
       if (n > 0)
         peer_queue_to_decrypt(peer, buf, n);
       else if (!BIO_should_retry(peer->wbio))
-        return SSLSTATUS_FAIL;
+        return -1;
     } while (n > 0);
+  }
 
-  return status;
+  return (status == SSLSTATUS_OK) ? 0 : -1;
 }
 
 
