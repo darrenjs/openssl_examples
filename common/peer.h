@@ -34,10 +34,12 @@ typedef struct peer_t
   // waiting to be written to socket;
   uint8_t *write_buf;
   ssize_t  write_sz;
+  ssize_t write_cap;
 
   // waiting to be processed
   uint8_t *process_buf;
   ssize_t  process_sz;
+  ssize_t process_cap;
 
   // to allow for reset
   bool server;

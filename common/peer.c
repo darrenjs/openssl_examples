@@ -16,6 +16,13 @@ static inline bool ssl_status_want_io(int status) { return status == SSL_ERROR_W
 static inline bool ssl_status_ok(int status) { return status == SSL_ERROR_NONE; }
 static inline bool ssl_status_fail(int status) { return !ssl_status_ok(status) && !ssl_status_want_io(status); }
 
+static ssize_t find_next_power_of_2(ssize_t arg)
+{
+  int pow = 1;
+  while (pow < arg) pow <<= 1;
+  return pow;
+}
+
 
 /* =================================================== */
 
@@ -70,6 +77,7 @@ int peer_delete(peer_t * peer)
 
   peer->write_buf = peer->process_buf = NULL;
   peer->write_sz = peer->process_sz = 0;
+  peer->write_cap = peer->process_cap = 0;
 
   peer->ctx = NULL;
   return 0;
@@ -139,10 +147,25 @@ int peer_close(peer_t *peer)
  * ========================= */
 
 
-static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz,
+static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz, ssize_t * dst_cap,
              const uint8_t * src_buf, ssize_t src_sz)
 {
-  *dst_buf = realloc(*dst_buf, *dst_sz + src_sz);
+  if (*dst_cap == 0) {
+    *dst_cap = (src_sz <= DEFAULT_BUF_SIZE)
+      ? DEFAULT_BUF_SIZE : find_next_power_of_2(src_sz);
+
+    *dst_buf = malloc(*dst_cap * sizeof(uint8_t));
+    if (*dst_buf == NULL)
+      LOG_KILL("failed on malloc");
+  }
+
+  else if (*dst_sz + src_sz > *dst_cap) {
+    *dst_cap = find_next_power_of_2(*dst_sz + src_sz);
+    *dst_buf = realloc(*dst_buf, *dst_cap);
+    if (*dst_buf == NULL)
+      LOG_KILL("failed on realloc");
+  }
+
   memcpy(*dst_buf + *dst_sz, src_buf, src_sz);
   *dst_sz += src_sz;
   return 0;
@@ -150,12 +173,12 @@ static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz,
 
 static int peer_queue_to_write(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
-  return __queue(&peer->write_buf, &peer->write_sz, buf, len);
+  return __queue(&peer->write_buf, &peer->write_sz, &peer->write_cap, buf, len);
 }
 
 static int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
-  return __queue(&peer->process_buf, &peer->process_sz, buf, len);
+  return __queue(&peer->process_buf, &peer->process_sz, &peer->process_cap, buf, len);
 }
 
 /* =================================================== */
@@ -229,7 +252,7 @@ int peer_send(peer_t *peer)
       memmove(peer->write_buf, peer->write_buf+n, peer->write_sz-n);
 
     peer->write_sz -= n;
-    peer->write_buf = realloc(peer->write_buf, peer->write_sz);
+    //peer->write_buf = realloc(peer->write_buf, peer->write_sz);
     return 0;
   }
   else
