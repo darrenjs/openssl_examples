@@ -255,5 +255,8 @@ int handle_new_connection()
   }
 
   fprintf(stderr, "Accepted connection on %s\n", peer_get_addr(&client));
+  peer_show_certificate(stdout, &client);
+  fprintf(stdout, "Client pubkey at %p\n", peer_get_pubkey(&client));
+
   return 0;
 }

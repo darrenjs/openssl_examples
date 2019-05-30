@@ -6,6 +6,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include "ssl_util.h"
 
 typedef struct peer_t
 {
@@ -50,6 +51,10 @@ int peer_do_handshake(peer_t *peer);
 int peer_recv(peer_t *peer);
 int peer_send(peer_t *peer);
 int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz);
+
+// crypto funcs
+EVP_PKEY *peer_get_pubkey(const peer_t * const);
+void      peer_show_certificate(FILE *stream, const peer_t * const);
 
 // getter
 const char * peer_get_addr(const peer_t * const); // static mem

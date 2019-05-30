@@ -19,6 +19,7 @@
 
 #include "peer.h"
 #include "macros.h"
+#include "ssl_util.h"
 
 /* =========================
  *  global static decls
@@ -268,6 +269,37 @@ int peer_send(peer_t *peer)
   }
   else
     return -1;
+}
+
+/* =================================================== */
+
+/* =========================
+ *  crypto funcs
+ * ========================= */
+
+// get a public key
+EVP_PKEY *peer_get_pubkey(const peer_t * const peer)
+{
+  if (!peer_valid(peer)) return NULL;
+  X509 *cert = SSL_get_peer_certificate(peer->ssl);
+  if (cert == NULL) {
+    fprintf(stderr, "Failed to get the certificate\n");
+    return NULL;
+  }
+
+  EVP_PKEY *key = X509_get_pubkey(cert);
+  X509_free(cert);
+  return key;
+}
+
+// show the certs
+void peer_show_certificate(FILE *stream, const peer_t * const peer)
+{
+  if (!peer_valid(peer)) {
+    fputs("No connection\n", stream);
+  }
+
+  show_certificates(stream, peer->ssl);
 }
 
 
