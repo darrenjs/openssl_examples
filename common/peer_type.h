@@ -34,6 +34,10 @@ typedef struct peer_t
   // waiting to be processed
   uint8_t *process_buf;
   ssize_t  process_sz;
+
+  // to allow for reset
+  bool server;
+  SSL_CTX * ctx;
 } peer_t;
 
 int peer_create(peer_t * const, SSL_CTX *, bool server);

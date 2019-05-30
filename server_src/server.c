@@ -20,22 +20,30 @@ it under the terms of the MIT license. See LICENSE for details.
 #include "config.h"
 #include "macros.h"
 
-/* =============================== */
+/* ------------------------------= */
 
 SSL_CTX *server_ctx;
 peer_t client;
 int listen_sock;
 
-/* =============================== */
+/* ------------------------------= */
 
 int setup_signals();
 void shutdown_properly(int code, void *arg);
 void handle_signal_action(int sig_number);
 
+int build_fd_sets(fd_set *read_fds,
+    fd_set *write_fds,
+    fd_set *except_fds,
+    int listen_sock
+    );
+
+int handle_new_connection();
+
 int handle_read_from_stdin(peer_t *client);
 int handle_received_message(peer_t *peer);
 
-/* =============================== */
+/* ------------------------------= */
 
 int main(int argc, char **argv)
 {
@@ -57,61 +65,14 @@ int main(int argc, char **argv)
     LOG_KILL("failed to setup the listen socket");
   }
 
+  peer_create(&client, server_ctx, true); // FIXME (strawman)
+  fd_set read_fds;
+  fd_set write_fds;
+  fd_set except_fds;
 
-  struct pollfd fdset[2];
-  memset(&fdset, 0, sizeof(fdset));
-
-  fdset[0].fd = STDIN_FILENO;
-  fdset[0].events = POLLIN;
-
+  fprintf(stderr, "Waiting for incoming connections.\n");
   while (1) {
-    peer_create(&client, server_ctx, true);
-    printf("waiting for next connection on port %d\n", listen_port);
-
-    fd_set listen_fds;
-    FD_ZERO(&listen_fds);
-    FD_SET(listen_sock, &listen_fds);
-
-    int ret = 0;
-    while (ret == 0) {
-      ret = select(listen_sock + 1, &listen_fds, NULL, NULL, NULL);
-    }
-
-    if (FD_ISSET(listen_sock, &listen_fds)) {
-      if (peer_accept(&client, listen_sock) != 0)
-        LOG_KILL("failed to accept");
-    }
-    else {
-      continue;
-    }
-
-    printf("new connection from %s\n", peer_get_addr(&client));
-
-    fdset[1].fd = client.socket;
-    fdset[1].events = POLLERR | POLLHUP | POLLNVAL | POLLIN;
-
-    /* event loop */
-    while (1) {
-      fdset[1].events &= ~POLLOUT;
-      fdset[1].events |= (peer_want_write(&client)? POLLOUT : 0);
-
-      int nready = poll(&fdset[0], 2, -1);
-
-      if (nready == 0)
-        continue; /* no fd ready */
-
-      int revents = fdset[1].revents;
-      if (revents & POLLIN)
-        if (peer_recv(&client) == -1)
-          break;
-      if (revents & POLLOUT)
-        if (peer_send(&client) == -1)
-          break;
-      if (revents & (POLLERR | POLLHUP | POLLNVAL))
-        break;
-
-      if (fdset[0].revents & POLLIN)
-        handle_read_from_stdin(&client);
+    if (peer_valid(&client)) {
       if (peer_want_encrypt(&client))
         peer_encrypt(&client);
 
@@ -119,13 +80,64 @@ int main(int argc, char **argv)
         handle_received_message(&client);
     }
 
-    peer_delete(&client);
+    int high_sock = build_fd_sets(&read_fds, &write_fds, &except_fds, listen_sock);
+    int activity  = select(high_sock + 1, &read_fds, &write_fds, &except_fds, NULL);
+
+    switch (activity) {
+      case -1:
+        perror("select");
+        LOG_KILL("failed on select");
+        break;
+
+      case 0:
+        LOG("select returned 0");
+        break;
+
+      default:
+        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+          if (handle_read_from_stdin(&client) != 0)
+            LOG_KILL("failed on read from stdin");
+        }
+        if (FD_ISSET(STDIN_FILENO, &except_fds)) {
+          LOG_KILL("exception on stdin");
+        }
+
+        if (FD_ISSET(listen_sock, &read_fds)) {
+          handle_new_connection();
+        }
+        if (FD_ISSET(listen_sock, &except_fds)) {
+          LOG_KILL("exception on listen socket");
+        }
+
+        if (peer_valid(&client)) {
+          if (FD_ISSET(client.socket, &read_fds)) {
+            if (peer_recv(&client) != 0) {
+              fprintf(stderr, "peer_recv failed; closing client on %s\n", peer_get_addr(&client));
+              peer_close(&client);
+              continue;
+            }
+          }
+          if (FD_ISSET(client.socket, &write_fds)) {
+            if (peer_send(&client) != 0) {
+              fprintf(stderr, "peer_recv failed; closing client on %s\n", peer_get_addr(&client));
+              peer_close(&client);
+              continue;
+            }
+          }
+          if (FD_ISSET(client.socket, &except_fds)) {
+            fprintf(stderr, "Exception on socket; closing client on %s\n", peer_get_addr(&client));
+            peer_close(&client);
+            continue;
+          }
+        }
+        break;
+    }
   }
 
   return 0;
 }
 
-/* ========================== */
+/* ------------------------== */
 
 void handle_signal_action(int sig_number)
 {
@@ -139,7 +151,7 @@ void handle_signal_action(int sig_number)
   }
 }
 
-/* ========================== */
+/* ------------------------== */
 
 int setup_signals()
 {
@@ -164,7 +176,7 @@ int setup_signals()
   return 0;
 }
 
-/* ========================== */
+/* ------------------------== */
 
 void shutdown_properly(int code, void *__)
 {
@@ -174,7 +186,7 @@ void shutdown_properly(int code, void *__)
   _exit(code);
 }
 
-/* ============================== */
+/* ------------------------------ */
 
 int handle_read_from_stdin(peer_t *peer)
 {
@@ -191,5 +203,60 @@ int  handle_received_message(peer_t *peer)
 {
   printf("%.*s", (int)peer->process_sz, (char *) peer->process_buf);
   peer->process_sz = 0;
+  return 0;
+}
+
+/* ------------------------------- */
+
+int build_fd_sets(fd_set *read_fds,
+    fd_set *write_fds,
+    fd_set *except_fds,
+    int listen_sock)
+{
+  int high_sock= listen_sock;
+
+  FD_ZERO(read_fds);
+  FD_SET(STDIN_FILENO, read_fds);
+
+  FD_ZERO(write_fds);
+
+  FD_ZERO(except_fds);
+  FD_SET(STDIN_FILENO, except_fds);
+
+  if (listen_sock != -1) {
+    FD_SET(listen_sock, read_fds);
+    FD_SET(listen_sock, except_fds);
+  }
+
+  if (peer_valid(&client)) {
+    FD_SET(client.socket, read_fds);
+    FD_SET(client.socket, except_fds);
+
+    // max
+    high_sock = (high_sock > client.socket) ? high_sock : client.socket;
+
+    if (peer_want_write(&client))
+      FD_SET(client.socket, write_fds);
+  }
+
+  return high_sock;
+}
+
+
+/* ------------------------------------------------------- */
+
+int handle_new_connection()
+{
+  if (peer_valid(&client)) {
+    fputs("There is too much connections, ignoring the new one\n", stderr);
+    return -1;
+  }
+
+  if (peer_accept(&client, listen_sock) != 0) {
+    fputs("Failed to accept connection\n", stderr);
+    return -1;
+  }
+
+  fprintf(stderr, "Accepted connection on %s\n", peer_get_addr(&client));
   return 0;
 }

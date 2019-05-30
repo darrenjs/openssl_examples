@@ -7,16 +7,13 @@
 #include <string.h>
 #include <unistd.h>
 
-int peer_create(peer_t *peer, SSL_CTX *ctx, bool server)
+static int peer_setup(peer_t * peer)
 {
-  /* missing stuff */
-  memset(peer, 0, sizeof(peer_t));
-
   peer->rbio = BIO_new(BIO_s_mem());
   peer->wbio = BIO_new(BIO_s_mem());
-  peer->ssl  = SSL_new(ctx);
+  peer->ssl  = SSL_new(peer->ctx);
 
-  if (server)
+  if (peer->server)
     SSL_set_accept_state(peer->ssl);
   else
     SSL_set_connect_state(peer->ssl);
@@ -25,10 +22,26 @@ int peer_create(peer_t *peer, SSL_CTX *ctx, bool server)
   return 0;
 }
 
+
+int peer_create(peer_t *peer, SSL_CTX *ctx, bool server)
+{
+  /* missing stuff */
+  memset(peer, 0, sizeof(peer_t));
+  peer->socket = -1;
+  peer->server = server;
+  peer->ctx    = ctx;
+
+  return peer_setup(peer);
+}
+
 int peer_delete(peer_t * peer)
 {
-  if (peer_close(peer) == -1)
+  if (peer == NULL)
     return -1;
+
+  if (peer->socket != -1)
+    close(peer->socket);
+  peer->socket = -1;
 
   if (peer->ssl)
     SSL_free(peer->ssl);
@@ -44,6 +57,7 @@ int peer_delete(peer_t * peer)
   peer->write_buf = peer->encrypt_buf = peer->process_buf = NULL;
   peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
 
+  peer->ctx = NULL;
   return 0;
 }
 
@@ -54,10 +68,16 @@ int peer_close(peer_t *peer)
 
   if (peer->socket != -1)
     close(peer->socket);
-
   peer->socket = -1;
+
   peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
-  return 0;
+
+  // SSL object has garbage, needs to be reset to allow for
+  // another connection
+  if (peer->ssl)
+    SSL_free(peer->ssl);
+
+  return peer_setup(peer);
 }
 
 int peer_connect(peer_t * const peer, struct sockaddr_in *addr)
