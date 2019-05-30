@@ -1,10 +1,3 @@
-/*
-Copyright (c) 2017 Darren Smith
-
-ssl_examples is free software; you can redistribute it and/or modify
-it under the terms of the MIT license. See LICENSE for details.
-*/
-
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -47,6 +40,18 @@ int handle_received_message(peer_t *peer);
 
 int main(int argc, char **argv)
 {
+  if (argc > 2) {
+    fprintf(stderr, "usage: %s [port]\n", argv[0]);
+    return -1;
+  }
+
+  int listen_port = (argc > 1) ? strtol(argv[1], NULL, 10) : default_port;
+  if (listen_port == LONG_MIN || listen_port == LONG_MAX || listen_port <= 0) {
+    perror("failed to convert value");
+    fprintf(stderr, "usage: %s [port]\n", argv[0]);
+    return -1;
+  }
+
   if (setup_signals() != 0) {
     LOG_KILL("failed to setup signals");
   }
@@ -59,13 +64,14 @@ int main(int argc, char **argv)
     LOG_KILL("failed to load server certificates");
   }
 
-  const char * hostname = (argc > 1) ? argv[1] : default_host;
-  int listen_port = (argc > 2) ? atoi(argv[2]) : default_port;
-  if (net_start_listen_socket(hostname, &listen_port, &listen_sock) != 0) {
+  if (net_start_listen_socket(default_host, &listen_port, &listen_sock) != 0) {
     LOG_KILL("failed to setup the listen socket");
   }
 
-  peer_create(&client, server_ctx, true); // FIXME (strawman)
+  if (peer_create(&client, server_ctx, true) != 0) {
+    LOG_KILL("failed to create peer");
+  }
+
   fd_set read_fds;
   fd_set write_fds;
   fd_set except_fds;
