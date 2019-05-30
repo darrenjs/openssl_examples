@@ -4,8 +4,34 @@
 
 #include "peer_type.h"
 #include "macros.h"
-#include <string.h>
-#include <unistd.h>
+
+/* =========================
+ *  global static decls
+ * ========================= */
+
+static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len);
+
+static inline bool ssl_status_want_io(int status)
+{
+  return status == SSL_ERROR_WANT_WRITE || status == SSL_ERROR_WANT_READ;
+}
+
+static inline bool ssl_status_ok(int status)
+{
+  return status == SSL_ERROR_NONE;
+}
+
+static inline bool ssl_status_fail(int status)
+{
+  return !ssl_status_ok(status) && !ssl_status_want_io(status);
+}
+
+
+/* =================================================== */
+
+/* =========================
+ *  type funcs
+ * ========================= */
 
 static int peer_setup(peer_t * peer)
 {
@@ -61,25 +87,6 @@ int peer_delete(peer_t * peer)
   return 0;
 }
 
-int peer_close(peer_t *peer)
-{
-  if (peer == NULL)
-    return -1;
-
-  if (peer->socket != -1)
-    close(peer->socket);
-  peer->socket = -1;
-
-  peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
-
-  // SSL object has garbage, needs to be reset to allow for
-  // another connection
-  if (peer->ssl)
-    SSL_free(peer->ssl);
-
-  return peer_setup(peer);
-}
-
 int peer_connect(peer_t * const peer, struct sockaddr_in *addr)
 {
   peer->socket = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
@@ -118,6 +125,32 @@ int peer_accept(peer_t * peer, int listen_socket)
   return 0;
 }
 
+int peer_close(peer_t *peer)
+{
+  if (peer == NULL)
+    return -1;
+
+  if (peer->socket != -1)
+    close(peer->socket);
+  peer->socket = -1;
+
+  peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
+
+  // SSL object has garbage, needs to be reset to allow for
+  // another connection
+  if (peer->ssl)
+    SSL_free(peer->ssl);
+
+  return peer_setup(peer);
+}
+
+/* =================================================== */
+
+/* =========================
+ *  queue funcs
+ * ========================= */
+
+
 static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz,
              const uint8_t * src_buf, ssize_t src_sz)
 {
@@ -142,12 +175,23 @@ int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
   return __queue(&peer->process_buf, &peer->process_sz, buf, len);
 }
 
+/* =================================================== */
+
+/* =========================
+ *  bool funcs
+ * ========================= */
+
 
 bool peer_valid(const peer_t * const peer) { return peer->socket != -1; }
 bool peer_want_write(peer_t *peer) { return peer->write_sz > 0; }
 bool peer_want_encrypt(peer_t *peer) { return peer->encrypt_sz > 0; }
 bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
 
+/* =================================================== */
+
+/* =========================
+ *  getter
+ * ========================= */
 
 const char * peer_get_addr(const peer_t * const peer)
 {

@@ -11,8 +11,16 @@
 #include <openssl/ssl.h>
 
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <unistd.h>
+
 
 typedef struct peer_t
 {
@@ -40,20 +48,31 @@ typedef struct peer_t
   SSL_CTX * ctx;
 } peer_t;
 
+// type funcs
 int peer_create(peer_t * const, SSL_CTX *, bool server);
 int peer_delete(peer_t * const);
-int peer_close(peer_t * const);
 
+// connect funcs
+int peer_close(peer_t * const);
 int peer_connect(peer_t * const, struct sockaddr_in *addr);
 int peer_accept(peer_t * const, int listen_socket);
 
+// queue funcs
 int peer_queue_to_decrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
 int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
 int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len);
 
+// bool funcs
 bool peer_valid(const peer_t * const);
 bool peer_want_write(peer_t *peer);
 bool peer_want_encrypt(peer_t *peer);
 bool peer_want_read(peer_t *peer);
 
+// io funcs
+int peer_do_handshake(peer_t *peer);
+int peer_encrypt(peer_t *peer);
+int peer_recv(peer_t *peer);
+int peer_send(peer_t *peer);
+
+// getter
 const char * peer_get_addr(const peer_t * const); // static mem
