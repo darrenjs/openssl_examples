@@ -252,7 +252,6 @@ int peer_send(peer_t *peer)
       memmove(peer->write_buf, peer->write_buf+n, peer->write_sz-n);
 
     peer->write_sz -= n;
-    //peer->write_buf = realloc(peer->write_buf, peer->write_sz);
     return 0;
   }
   else
