@@ -5,22 +5,7 @@
  */
 #pragma once
 
-#include <openssl/bio.h>
-#include <openssl/err.h>
-#include <openssl/pem.h>
-#include <openssl/ssl.h>
-
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <stdbool.h>
-#include <stddef.h>
-#include <unistd.h>
-
 
 typedef struct peer_t
 {
