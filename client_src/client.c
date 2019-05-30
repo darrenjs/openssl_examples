@@ -31,6 +31,8 @@ int  setup_signals();
 void shutdown_properly(int code, void *arg);
 void handle_signal_action(int sig_number);
 
+int build_fd_sets(peer_t *server, fd_set *read_fds, fd_set *write_fds, fd_set *except_fds);
+
 int  handle_read_from_stdin(peer_t *server);
 int  handle_received_message(peer_t *peer);
 
@@ -38,6 +40,8 @@ int  handle_received_message(peer_t *peer);
 
 int main(int argc, char **argv)
 {
+  const char * hostname = (argc > 1) ? argv[1] : default_host;
+  int server_port = (argc > 2) ? atoi(argv[2]) : default_port;
   if (setup_signals() != 0) {
     LOG_KILL("failed to setup signals");
   }
@@ -50,8 +54,10 @@ int main(int argc, char **argv)
     LOG_KILL("failed to load client certificates");
   }
 
-  int port = (argc > 1) ? atoi(argv[1]) : default_port;
-  const char * host = default_host;
+  /* Set nonblock for stdin. */
+  int flag = fcntl(STDIN_FILENO, F_GETFL, 0);
+  flag |= O_NONBLOCK;
+  fcntl(STDIN_FILENO, F_SETFL, flag);
 
   peer_create(&server, client_ctx, false);
 
@@ -59,52 +65,71 @@ int main(int argc, char **argv)
   struct sockaddr_in addr;
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-  if (inet_pton(AF_INET, host, &(addr.sin_addr)) <= 0)
+  addr.sin_port = htons(server_port);
+  if (inet_pton(AF_INET, hostname, &(addr.sin_addr)) <= 0)
     LOG_KILL("inet_pton()");
 
   if (peer_connect(&server, &addr) != 0)
     LOG_KILL("failed to connect to peer");
 
-  struct pollfd fdset[2];
-  memset(&fdset, 0, sizeof(fdset));
-
-  fdset[0].fd = STDIN_FILENO;
-  fdset[0].events = POLLIN;
-
-  fdset[1].fd = server.socket;
-  fdset[1].events = POLLERR | POLLHUP | POLLNVAL | POLLIN;
-
-
   peer_do_handshake(&server);
+
+
+  fprintf(stdout, "Connected to peer at %s\n", peer_get_addr(&server));
+
+  fd_set read_fds;
+  fd_set write_fds;
+  fd_set except_fds;
+
   /* event loop */
   while (1) {
-    fdset[1].events &= ~POLLOUT;
-    fdset[1].events |= (peer_want_write(&server)) ? POLLOUT : 0;
+    if (peer_valid(&server)) {
+      if (peer_want_encrypt(&server)) {
+        peer_encrypt(&server);
+      }
+      if (peer_want_read(&server)) {
+        handle_received_message(&server);
+      }
+    }
+    int high_sock = build_fd_sets(&server, &read_fds, &write_fds, &except_fds);
+    int activity  = select(high_sock + 1, &read_fds, &write_fds, &except_fds, NULL);
 
-    int nready = poll(&fdset[0], 2, -1);
-
-    if (nready == 0)
-      continue; /* no fd ready */
-
-    int revents = fdset[1].revents;
-    if (revents & POLLIN)
-      if (peer_recv(&server) == -1)
+    switch (activity) {
+      case -1:
+        perror("select");
+        LOG_KILL("failed to select");
         break;
-    if (revents & POLLOUT)
-      if (peer_send(&server) == -1)
+
+      case 0:
+        LOG("select returned 0");
         break;
-    if (revents & (POLLERR | POLLHUP | POLLNVAL))
-      break;
 
-    if (fdset[0].revents & POLLIN)
-      handle_read_from_stdin(&server);
+      default:
+        if (FD_ISSET(STDIN_FILENO, &read_fds)) {
+          handle_read_from_stdin(&server); // FIXME ret val
+        }
+        if (FD_ISSET(STDIN_FILENO, &except_fds)) {
+          LOG_KILL("exception on stdin");
+        }
 
-    if (peer_want_encrypt(&server))
-      peer_encrypt(&server);
-
-    if (peer_want_read(&server))
-      handle_received_message(&server);
+        if (peer_valid(&server)) {
+          if (FD_ISSET(server.socket, &read_fds)) {
+            if (peer_recv(&server) == -1) {
+              peer_close(&server);
+              LOG_KILL("failed to receive from sever");
+            }
+          }
+          if (FD_ISSET(server.socket, &write_fds)) {
+            if (peer_send(&server) == -1) {
+              peer_close(&server);
+              LOG_KILL("failed to send to sever");
+            }
+          }
+          if (FD_ISSET(server.socket, &except_fds)) {
+            LOG_KILL("exception on server socket");
+          }
+        }
+    }
   }
 
   return 0;
@@ -181,3 +206,20 @@ int  handle_received_message(peer_t *peer)
 
 /* ========================== */
 
+int build_fd_sets(peer_t *server, fd_set *read_fds, fd_set *write_fds, fd_set *except_fds)
+{
+  FD_ZERO(read_fds);
+  FD_SET(STDIN_FILENO, read_fds);
+  FD_SET(server->socket, read_fds);
+
+  FD_ZERO(write_fds);
+  // there is smth to send, set up write_fd for server socket
+  if (peer_want_write(server))
+    FD_SET(server->socket, write_fds);
+
+  FD_ZERO(except_fds);
+  FD_SET(STDIN_FILENO, except_fds);
+  FD_SET(server->socket, except_fds);
+
+  return server->socket;
+}
