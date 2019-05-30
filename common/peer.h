@@ -35,10 +35,6 @@ typedef struct peer_t
   uint8_t *write_buf;
   ssize_t  write_sz;
 
-  // waiting to be encrypted by SSL object
-  uint8_t *encrypt_buf;
-  ssize_t  encrypt_sz;
-
   // waiting to be processed
   uint8_t *process_buf;
   ssize_t  process_sz;

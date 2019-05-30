@@ -9,13 +9,11 @@
  *  global static decls
  * ========================= */
 
-static int peer_encrypt(peer_t *peer);
+static int peer_encrypt(peer_t *peer, const uint8_t *buf_to_encrypt, ssize_t buf_sz);
 static int peer_decrypt(peer_t *peer, uint8_t * src, ssize_t len);
-static int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
+
 static int peer_queue_to_write(peer_t *peer, const uint8_t *buf, ssize_t len);
 static int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len);
-
-static bool peer_want_encrypt(peer_t *peer);
 
 static inline bool ssl_status_want_io(int status)
 {
@@ -81,13 +79,11 @@ int peer_delete(peer_t * peer)
 
   if (peer->write_buf)
     free(peer->write_buf);
-  if (peer->encrypt_buf)
-    free(peer->encrypt_buf);
   if (peer->process_buf)
     free(peer->process_buf);
 
-  peer->write_buf = peer->encrypt_buf = peer->process_buf = NULL;
-  peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
+  peer->write_buf = peer->process_buf = NULL;
+  peer->write_sz = peer->process_sz = 0;
 
   peer->ctx = NULL;
   return 0;
@@ -140,7 +136,7 @@ int peer_close(peer_t *peer)
     close(peer->socket);
   peer->socket = -1;
 
-  peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
+  peer->write_sz = peer->process_sz = 0;
 
   // SSL object has garbage, needs to be reset to allow for
   // another connection
@@ -166,11 +162,6 @@ static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz,
   return 0;
 }
 
-int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len)
-{
-  return __queue(&peer->encrypt_buf, &peer->encrypt_sz, buf, len);
-}
-
 static int peer_queue_to_write(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
   return __queue(&peer->write_buf, &peer->write_sz, buf, len);
@@ -190,7 +181,6 @@ static int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
 
 bool peer_valid(const peer_t * const peer) { return peer->socket != -1; }
 bool peer_want_write(peer_t *peer) { return peer->write_sz > 0; }
-static bool peer_want_encrypt(peer_t *peer) { return peer->encrypt_sz > 0; }
 bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
 
 /* =================================================== */
@@ -226,7 +216,7 @@ int peer_do_handshake(peer_t *peer)
  * waiting data resides in encrypt_buf.  It needs to be passed into the SSL
  * object for encryption, which in turn generates the encrypted bytes that then
  * will be queued for later socket write. */
-static int peer_encrypt(peer_t *peer)
+static int peer_encrypt(peer_t *peer, const uint8_t *buf_to_encrypt, ssize_t buf_sz)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
   int status;
@@ -234,18 +224,16 @@ static int peer_encrypt(peer_t *peer)
   if (!SSL_is_init_finished(peer->ssl))
     return 0;
 
-  while (peer_want_encrypt(peer)) {
-    int n = SSL_write(peer->ssl, peer->encrypt_buf, peer->encrypt_sz);
+  int written = 0;
+  while (written < buf_sz) {
+    int n = SSL_write(peer->ssl, buf_to_encrypt + written, buf_sz - written);
     status = SSL_get_error(peer->ssl, n);
 
     if (n > 0) {
-      /* consume the waiting bytes that have been used by SSL */
-      if (n < peer->encrypt_sz)
-        memmove(peer->encrypt_buf, peer->encrypt_buf+n, peer->encrypt_sz-n);
-      peer->encrypt_sz -= n;
-      peer->encrypt_buf = realloc(peer->encrypt_buf, peer->encrypt_sz);
+      written += n;
 
-      /* take the output of the SSL object and queue it for socket write */
+      /* take the output of the SSL object
+       * and queue it for socket write */
       do {
         n = BIO_read(peer->wbio, buf, sizeof(buf));
         if (n > 0)
@@ -280,8 +268,7 @@ int peer_recv(peer_t *peer)
 int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz)
 {
   if (sz > 0) {
-    peer_queue_to_encrypt(peer, buf, sz);
-    return peer_encrypt(peer);
+    return peer_encrypt(peer, buf, sz);
   }
   else
     return -1;
