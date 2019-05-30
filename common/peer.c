@@ -9,7 +9,13 @@
  *  global static decls
  * ========================= */
 
-static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len);
+static int peer_encrypt(peer_t *peer);
+static int peer_decrypt(peer_t *peer, uint8_t * src, ssize_t len);
+static int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len);
+static int peer_queue_to_write(peer_t *peer, const uint8_t *buf, ssize_t len);
+static int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len);
+
+static bool peer_want_encrypt(peer_t *peer);
 
 static inline bool ssl_status_want_io(int status)
 {
@@ -165,12 +171,12 @@ int peer_queue_to_encrypt(peer_t *peer, const uint8_t *buf, ssize_t len)
   return __queue(&peer->encrypt_buf, &peer->encrypt_sz, buf, len);
 }
 
-int peer_queue_to_decrypt(peer_t *peer, const uint8_t *buf, ssize_t len)
+static int peer_queue_to_write(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
   return __queue(&peer->write_buf, &peer->write_sz, buf, len);
 }
 
-int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
+static int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
 {
   return __queue(&peer->process_buf, &peer->process_sz, buf, len);
 }
@@ -184,7 +190,7 @@ int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
 
 bool peer_valid(const peer_t * const peer) { return peer->socket != -1; }
 bool peer_want_write(peer_t *peer) { return peer->write_sz > 0; }
-bool peer_want_encrypt(peer_t *peer) { return peer->encrypt_sz > 0; }
+static bool peer_want_encrypt(peer_t *peer) { return peer->encrypt_sz > 0; }
 bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
 
 /* =================================================== */
@@ -206,7 +212,7 @@ int peer_do_handshake(peer_t *peer)
     do {
       n = BIO_read(peer->wbio, buf, sizeof(buf));
       if (n > 0)
-        peer_queue_to_decrypt(peer, buf, n);
+        peer_queue_to_write(peer, buf, n);
       else if (!BIO_should_retry(peer->wbio))
         return -1;
     } while (n > 0);
@@ -220,7 +226,7 @@ int peer_do_handshake(peer_t *peer)
  * waiting data resides in encrypt_buf.  It needs to be passed into the SSL
  * object for encryption, which in turn generates the encrypted bytes that then
  * will be queued for later socket write. */
-int peer_encrypt(peer_t *peer)
+static int peer_encrypt(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
   int status;
@@ -243,7 +249,7 @@ int peer_encrypt(peer_t *peer)
       do {
         n = BIO_read(peer->wbio, buf, sizeof(buf));
         if (n > 0)
-          peer_queue_to_decrypt(peer, buf, n);
+          peer_queue_to_write(peer, buf, n);
         else if (!BIO_should_retry(peer->wbio))
           return -1;
       } while (n > 0);
@@ -265,7 +271,18 @@ int peer_recv(peer_t *peer)
   ssize_t n = read(peer->socket, buf, sizeof(buf));
 
   if (n > 0)
-    return push_encrypted_bytes(peer, buf, (size_t)n);
+    return peer_decrypt(peer, buf, n);
+  else
+    return -1;
+}
+
+/* Read encrypted bytes from socket. */
+int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz)
+{
+  if (sz > 0) {
+    peer_queue_to_encrypt(peer, buf, sz);
+    return peer_encrypt(peer);
+  }
   else
     return -1;
 }
@@ -311,7 +328,7 @@ const char * peer_get_addr(const peer_t * const peer)
  *  static implementation
  * ========================= */
 
-static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len)
+static int peer_decrypt(peer_t *peer, uint8_t * src, ssize_t len)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
   int status;
@@ -350,7 +367,7 @@ static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len)
       do {
         n = BIO_read(peer->wbio, buf, sizeof(buf));
         if (n > 0)
-          peer_queue_to_decrypt(peer, buf, n);
+          peer_queue_to_write(peer, buf, n);
         else if (!BIO_should_retry(peer->wbio))
           return -1;
       } while (n > 0);
