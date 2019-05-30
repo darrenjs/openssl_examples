@@ -114,13 +114,13 @@ int main(int argc, char **argv)
 
         if (peer_valid(&server)) {
           if (FD_ISSET(server.socket, &read_fds)) {
-            if (peer_recv(&server) == -1) {
+            if (peer_recv(&server) != 0) {
               peer_close(&server);
               LOG_KILL("failed to receive from sever");
             }
           }
           if (FD_ISSET(server.socket, &write_fds)) {
-            if (peer_send(&server) == -1) {
+            if (peer_send(&server) != 0) {
               peer_close(&server);
               LOG_KILL("failed to send to sever");
             }

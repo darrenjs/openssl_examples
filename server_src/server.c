@@ -57,7 +57,6 @@ int main(int argc, char **argv)
     LOG_KILL("failed to setup the listen socket");
   }
 
-  peer_create(&client, server_ctx, true);
 
   struct pollfd fdset[2];
   memset(&fdset, 0, sizeof(fdset));
@@ -66,6 +65,7 @@ int main(int argc, char **argv)
   fdset[0].events = POLLIN;
 
   while (1) {
+    peer_create(&client, server_ctx, true);
     printf("waiting for next connection on port %d\n", listen_port);
 
     fd_set listen_fds;
@@ -118,6 +118,7 @@ int main(int argc, char **argv)
       if (peer_want_read(&client))
         handle_received_message(&client);
     }
+
     peer_delete(&client);
   }
 

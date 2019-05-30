@@ -56,6 +56,7 @@ int peer_close(peer_t *peer)
     close(peer->socket);
 
   peer->socket = -1;
+  peer->write_sz = peer->encrypt_sz = peer->process_sz = 0;
   return 0;
 }
 
