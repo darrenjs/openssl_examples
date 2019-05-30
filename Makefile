@@ -1,13 +1,16 @@
-all:
+.PHONY: all
+all: ## make all the targets
 	make -C server_src
 	make -C client_src
 
-clean:
+.PHONY: clean
+clean: ## clean all the targets
 	make -C server_src clean
 	make -C client_src clean
 	rm -f server client vgcore*
 
-certs:
+.PHONY: certs
+certs: ## gen certificates
 	openssl genrsa -des3 -passout pass:ABCD -out server.pass.key 2048
 	openssl rsa -passin pass:ABCD -in server.pass.key -out server.key
 	rm -f server.pass.key
@@ -22,3 +25,7 @@ certs:
 	rm -f client.csr
 	cp server.crt server.key server_src
 	cp client.crt client.key client_src
+
+.PHONY: help
+help:	## display options
+	@grep -E '^[a-zA-Z_-]+:.*## .*' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
