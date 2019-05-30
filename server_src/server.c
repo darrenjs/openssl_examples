@@ -73,9 +73,6 @@ int main(int argc, char **argv)
   fprintf(stderr, "Waiting for incoming connections.\n");
   while (1) {
     if (peer_valid(&client)) {
-      if (peer_want_encrypt(&client))
-        peer_encrypt(&client);
-
       if (peer_want_read(&client))
         handle_received_message(&client);
     }
@@ -194,7 +191,7 @@ int handle_read_from_stdin(peer_t *peer)
   ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
 
   if (n > 0)
-    return peer_queue_to_encrypt(peer, buf, (size_t)n);
+    return peer_prepare_message_to_send(peer, buf, n);
   else
     return -1;
 }
