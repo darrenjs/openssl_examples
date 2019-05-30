@@ -202,7 +202,6 @@ static int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
  *  bool funcs
  * ========================= */
 
-
 bool peer_valid(const peer_t * const peer) { return peer->socket != -1; }
 bool peer_want_write(peer_t *peer) { return peer->write_sz > 0; }
 bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
@@ -218,18 +217,18 @@ int peer_do_handshake(peer_t *peer)
   uint8_t buf[DEFAULT_BUF_SIZE];
   int status;
 
-  int n = SSL_do_handshake(peer->ssl);
-  status = SSL_get_error(peer->ssl, n);
+  int ret = SSL_do_handshake(peer->ssl);
+  status = SSL_get_error(peer->ssl, ret);
 
-  /* Did SSL request to write bytes? */
+  // ssl may want to read stuff
   if (ssl_status_want_io(status)) {
     do {
-      n = BIO_read(peer->wbio, buf, sizeof(buf));
-      if (n > 0)
-        peer_queue_to_write(peer, buf, n);
+      ret = BIO_read(peer->wbio, buf, sizeof(buf));
+      if (ret > 0)
+        peer_queue_to_write(peer, buf, ret);
       else if (!BIO_should_retry(peer->wbio))
         return -1;
-    } while (n > 0);
+    } while (ret > 0);
   }
 
   return (!ssl_status_fail(status)) ? 0 : -1;
@@ -240,15 +239,14 @@ int peer_do_handshake(peer_t *peer)
 int peer_recv(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  ssize_t n = read(peer->socket, buf, sizeof(buf));
+  ssize_t nbytes = read(peer->socket, buf, DEFAULT_BUF_SIZE);
 
-  if (n > 0)
-    return peer_decrypt(peer, buf, n);
+  if (nbytes > 0)
+    return peer_decrypt(peer, buf, nbytes);
   else
     return -1;
 }
 
-/* Read encrypted bytes from socket. */
 int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz)
 {
   if (sz > 0) {
@@ -258,15 +256,14 @@ int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz)
     return -1;
 }
 
-/* Write encrypted bytes to the socket. */
 int peer_send(peer_t *peer)
 {
-  ssize_t n = write(peer->socket, peer->write_buf, peer->write_sz);
-  if (n > 0) {
-    if (n < peer->write_sz)
-      memmove(peer->write_buf, peer->write_buf+n, peer->write_sz-n);
+  ssize_t nwritten = write(peer->socket, peer->write_buf, peer->write_sz);
+  if (nwritten > 0) {
+    if (nwritten < peer->write_sz)
+      memmove(peer->write_buf, peer->write_buf + nwritten, peer->write_sz - nwritten);
 
-    peer->write_sz -= n;
+    peer->write_sz -= nwritten;
     return 0;
   }
   else
@@ -298,10 +295,6 @@ const char * peer_get_addr(const peer_t * const peer)
  *  static implementation
  * ========================= */
 
-/* Process outbound unencrypted data that is waiting to be encrypted.  The
- * waiting data resides in encrypt_buf.  It needs to be passed into the SSL
- * object for encryption, which in turn generates the encrypted bytes that then
- * will be queued for later socket write. */
 static int peer_encrypt(peer_t *peer, const uint8_t *buf_to_encrypt, ssize_t buf_sz)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
@@ -312,27 +305,27 @@ static int peer_encrypt(peer_t *peer, const uint8_t *buf_to_encrypt, ssize_t buf
 
   int written = 0;
   while (written < buf_sz) {
-    int n = SSL_write(peer->ssl, buf_to_encrypt + written, buf_sz - written);
-    status = SSL_get_error(peer->ssl, n);
+    int ret = SSL_write(peer->ssl, buf_to_encrypt + written, buf_sz - written);
+    status = SSL_get_error(peer->ssl, ret);
 
-    if (n > 0) {
-      written += n;
+    if (ret > 0) {
+      written += ret;
 
       /* take the output of the SSL object
        * and queue it for socket write */
       do {
-        n = BIO_read(peer->wbio, buf, sizeof(buf));
-        if (n > 0)
-          peer_queue_to_write(peer, buf, n);
+        ret = BIO_read(peer->wbio, buf, sizeof(buf));
+        if (ret > 0)
+          peer_queue_to_write(peer, buf, ret);
         else if (!BIO_should_retry(peer->wbio))
           return -1;
-      } while (n > 0);
+      } while (ret > 0);
     }
 
     if (ssl_status_fail(status))
       return -1;
 
-    if (n == 0)
+    if (ret == 0)
       break;
   }
   return 0;
@@ -342,16 +335,16 @@ static int peer_decrypt(peer_t *peer, uint8_t * src, ssize_t len)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
   int status;
-  int n;
+  int ret;
 
   while (len > 0) {
-    n = BIO_write(peer->rbio, src, len);
+    ret = BIO_write(peer->rbio, src, len);
 
-    if (n <= 0)
-      return -1; /* assume bio write failure is unrecoverable */
+    if (ret <= 0)
+      return -1; // bio failure is irrecoverable
 
-    src += n;
-    len -= n;
+    src += ret;
+    len -= ret;
 
     if (!SSL_is_init_finished(peer->ssl)) {
       if (peer_do_handshake(peer) == -1)
@@ -360,27 +353,24 @@ static int peer_decrypt(peer_t *peer, uint8_t * src, ssize_t len)
         return 0;
     }
 
-    /* The encrypted data is now in the input bio so now we can perform actual
-     * read of unencrypted data. */
-
+    // read cleartext
     do {
-      n = SSL_read(peer->ssl, buf, sizeof(buf));
-      if (n > 0)
-        peer_queue_to_process(peer, buf, n);
-    } while (n > 0);
+      ret = SSL_read(peer->ssl, buf, sizeof(buf));
+      if (ret > 0)
+        peer_queue_to_process(peer, buf, ret);
+    } while (ret > 0);
 
-    status = SSL_get_error(peer->ssl, n);
+    status = SSL_get_error(peer->ssl, ret);
 
-    /* Did SSL request to write bytes? This can happen if peer has requested SSL
-     * renegotiation. */
+    // may have renegotiation
     if (ssl_status_want_io(status))
       do {
-        n = BIO_read(peer->wbio, buf, sizeof(buf));
-        if (n > 0)
-          peer_queue_to_write(peer, buf, n);
+        ret = BIO_read(peer->wbio, buf, sizeof(buf));
+        if (ret > 0)
+          peer_queue_to_write(peer, buf, ret);
         else if (!BIO_should_retry(peer->wbio))
           return -1;
-      } while (n > 0);
+      } while (ret > 0);
 
     if (ssl_status_fail(status))
       return -1;
