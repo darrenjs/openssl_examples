@@ -1,212 +1,378 @@
+/**
+ * implementation
+ */
+
+#include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stddef.h>
+#include <unistd.h>
+
 #include "peer.h"
 #include "macros.h"
 
-
 /* =========================
- *  static decls
+ *  global static decls
  * ========================= */
 
-static ssl_status_t get_sslstatus(SSL* ssl, int n);
-static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len);
+static int peer_encrypt(peer_t *peer, const uint8_t *buf_to_encrypt, ssize_t buf_sz);
+static int peer_decrypt(peer_t *peer, uint8_t * src, ssize_t len);
 
-/* =========================
- *  implementation
- * ========================= */
+static inline bool ssl_status_want_io(int status) { return status == SSL_ERROR_WANT_WRITE || status == SSL_ERROR_WANT_READ; }
+static inline bool ssl_status_ok(int status) { return status == SSL_ERROR_NONE; }
+static inline bool ssl_status_fail(int status) { return !ssl_status_ok(status) && !ssl_status_want_io(status); }
 
-ssl_status_t peer_do_handshake(peer_t *peer)
+static ssize_t find_next_power_of_2(ssize_t arg)
 {
-  uint8_t buf[DEFAULT_BUF_SIZE];
-  ssl_status_t status;
-
-  int n = SSL_do_handshake(peer->ssl);
-  status = get_sslstatus(peer->ssl, n);
-
-  /* Did SSL request to write bytes? */
-  if (status == SSLSTATUS_WANT_IO)
-    do {
-      n = BIO_read(peer->wbio, buf, sizeof(buf));
-      if (n > 0)
-        peer_queue_to_decrypt(peer, buf, n);
-      else if (!BIO_should_retry(peer->wbio))
-        return SSLSTATUS_FAIL;
-    } while (n > 0);
-
-  return status;
+  int pow = 1;
+  while (pow < arg) pow <<= 1;
+  return pow;
 }
 
 
-/* Process outbound unencrypted data that is waiting to be encrypted.  The
- * waiting data resides in encrypt_buf.  It needs to be passed into the SSL
- * object for encryption, which in turn generates the encrypted bytes that then
- * will be queued for later socket write. */
-int peer_encrypt(peer_t *peer)
+/* =================================================== */
+
+/* =========================
+ *  type funcs
+ * ========================= */
+
+static int peer_setup(peer_t * peer)
 {
-  uint8_t buf[DEFAULT_BUF_SIZE];
-  ssl_status_t status;
+  peer->rbio = BIO_new(BIO_s_mem());
+  peer->wbio = BIO_new(BIO_s_mem());
+  peer->ssl  = SSL_new(peer->ctx);
 
-  if (!SSL_is_init_finished(peer->ssl))
-    return 0;
+  if (peer->server)
+    SSL_set_accept_state(peer->ssl);
+  else
+    SSL_set_connect_state(peer->ssl);
 
-  while (peer_want_encrypt(peer)) {
-    int n = SSL_write(peer->ssl, peer->encrypt_buf, peer->encrypt_sz);
-    status = get_sslstatus(peer->ssl, n);
-
-    if (n > 0) {
-      /* consume the waiting bytes that have been used by SSL */
-      if (n < peer->encrypt_sz)
-        memmove(peer->encrypt_buf, peer->encrypt_buf+n, peer->encrypt_sz-n);
-      peer->encrypt_sz -= n;
-      peer->encrypt_buf = realloc(peer->encrypt_buf, peer->encrypt_sz);
-
-      /* take the output of the SSL object and queue it for socket write */
-      do {
-        n = BIO_read(peer->wbio, buf, sizeof(buf));
-        if (n > 0)
-          peer_queue_to_decrypt(peer, buf, n);
-        else if (!BIO_should_retry(peer->wbio))
-          return -1;
-      } while (n > 0);
-    }
-
-    if (status == SSLSTATUS_FAIL)
-      return -1;
-
-    if (n == 0)
-      break;
-  }
+  SSL_set_bio(peer->ssl, peer->rbio, peer->wbio);
   return 0;
 }
+
+
+int peer_create(peer_t *peer, SSL_CTX *ctx, bool server)
+{
+  /* missing stuff */
+  memset(peer, 0, sizeof(peer_t));
+  peer->socket = -1;
+  peer->server = server;
+  peer->ctx    = ctx;
+
+  return peer_setup(peer);
+}
+
+int peer_delete(peer_t * peer)
+{
+  if (peer == NULL)
+    return -1;
+
+  if (peer->socket != -1)
+    close(peer->socket);
+  peer->socket = -1;
+
+  if (peer->ssl)
+    SSL_free(peer->ssl);
+  peer->ssl = NULL;
+
+  if (peer->write_buf)
+    free(peer->write_buf);
+  if (peer->process_buf)
+    free(peer->process_buf);
+
+  peer->write_buf = peer->process_buf = NULL;
+  peer->write_sz = peer->process_sz = 0;
+  peer->write_cap = peer->process_cap = 0;
+
+  peer->ctx = NULL;
+  return 0;
+}
+
+int peer_connect(peer_t * const peer, struct sockaddr_in *addr)
+{
+  peer->socket = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  if (peer->socket < 0) {
+    perror("socket");
+    LOG("failed to open socket");
+    return -1;
+  }
+
+  peer->address = *addr;
+  errno = 0;
+  while (
+      connect(peer->socket, (struct sockaddr *) &(peer->address), sizeof(struct sockaddr)) == -1
+      && errno == EINPROGRESS
+      );
+
+  if (errno != 0 && errno != EINPROGRESS) {
+    perror("connect");
+    LOG("failed to connect");
+    return -1;
+  }
+
+  return 0;
+}
+
+int peer_accept(peer_t * peer, int listen_socket)
+{
+  socklen_t len = sizeof(struct sockaddr);
+  peer->socket = accept(listen_socket, (struct sockaddr *) &peer->address, &len);
+  if (peer->socket == -1) {
+    perror("accept");
+    LOG("failed to accept");
+    return -1;
+  }
+
+  return 0;
+}
+
+int peer_close(peer_t *peer)
+{
+  if (peer == NULL)
+    return -1;
+
+  if (peer->socket != -1)
+    close(peer->socket);
+  peer->socket = -1;
+
+  peer->write_sz = peer->process_sz = 0;
+
+  // SSL object has garbage, needs to be reset to allow for
+  // another connection
+  if (peer->ssl)
+    SSL_free(peer->ssl);
+
+  return peer_setup(peer);
+}
+
+/* =================================================== */
+
+/* =========================
+ *  queue funcs
+ * ========================= */
+
+
+static int __queue(uint8_t ** dst_buf, ssize_t *dst_sz, ssize_t * dst_cap,
+             const uint8_t * src_buf, ssize_t src_sz)
+{
+  if (*dst_cap == 0) {
+    *dst_cap = (src_sz <= DEFAULT_BUF_SIZE)
+      ? DEFAULT_BUF_SIZE : find_next_power_of_2(src_sz);
+
+    *dst_buf = malloc(*dst_cap * sizeof(uint8_t));
+    if (*dst_buf == NULL)
+      LOG_KILL("failed on malloc");
+  }
+
+  else if (*dst_sz + src_sz > *dst_cap) {
+    *dst_cap = find_next_power_of_2(*dst_sz + src_sz);
+    *dst_buf = realloc(*dst_buf, *dst_cap);
+    if (*dst_buf == NULL)
+      LOG_KILL("failed on realloc");
+  }
+
+  memcpy(*dst_buf + *dst_sz, src_buf, src_sz);
+  *dst_sz += src_sz;
+  return 0;
+}
+
+static int peer_queue_to_write(peer_t *peer, const uint8_t *buf, ssize_t len)
+{
+  return __queue(&peer->write_buf, &peer->write_sz, &peer->write_cap, buf, len);
+}
+
+static int peer_queue_to_process(peer_t *peer, const uint8_t *buf, ssize_t len)
+{
+  return __queue(&peer->process_buf, &peer->process_sz, &peer->process_cap, buf, len);
+}
+
+/* =================================================== */
+
+/* =========================
+ *  bool funcs
+ * ========================= */
+
+bool peer_valid(const peer_t * const peer) { return peer->socket != -1; }
+bool peer_want_write(peer_t *peer) { return peer->write_sz > 0; }
+bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
+
+/* =================================================== */
+
+/* =========================
+ *  io funcs
+ * ========================= */
+
+int peer_do_handshake(peer_t *peer)
+{
+  uint8_t buf[DEFAULT_BUF_SIZE];
+  int status;
+
+  int ret = SSL_do_handshake(peer->ssl);
+  status = SSL_get_error(peer->ssl, ret);
+
+  // ssl may want to read stuff
+  if (ssl_status_want_io(status)) {
+    do {
+      ret = BIO_read(peer->wbio, buf, sizeof(buf));
+      if (ret > 0)
+        peer_queue_to_write(peer, buf, ret);
+      else if (!BIO_should_retry(peer->wbio))
+        return -1;
+    } while (ret > 0);
+  }
+
+  return (!ssl_status_fail(status)) ? 0 : -1;
+}
+
 
 /* Read encrypted bytes from socket. */
 int peer_recv(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  ssize_t n = read(peer->socket, buf, sizeof(buf));
+  ssize_t nbytes = read(peer->socket, buf, DEFAULT_BUF_SIZE);
 
-  if (n > 0)
-    return push_encrypted_bytes(peer, buf, (size_t)n);
+  if (nbytes > 0)
+    return peer_decrypt(peer, buf, nbytes);
   else
     return -1;
 }
 
-/* Write encrypted bytes to the socket. */
+int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz)
+{
+  if (sz > 0) {
+    return peer_encrypt(peer, buf, sz);
+  }
+  else
+    return -1;
+}
+
 int peer_send(peer_t *peer)
 {
-  ssize_t n = write(peer->socket, peer->write_buf, peer->write_sz);
-  if (n > 0) {
-    if (n < peer->write_sz)
-      memmove(peer->write_buf, peer->write_buf+n, peer->write_sz-n);
+  ssize_t nwritten = write(peer->socket, peer->write_buf, peer->write_sz);
+  if (nwritten > 0) {
+    if (nwritten < peer->write_sz)
+      memmove(peer->write_buf, peer->write_buf + nwritten, peer->write_sz - nwritten);
 
-    peer->write_sz -= n;
-    peer->write_buf = realloc(peer->write_buf, peer->write_sz);
+    peer->write_sz -= nwritten;
     return 0;
   }
   else
     return -1;
 }
 
-void ssl_init(SSL_CTX **ctx, const char * certfile, const char * keyfile)
-{
-  printf("initialising SSL\n");
 
-  /* SSL library initialisation */
-  SSL_library_init();
-  OpenSSL_add_all_algorithms();
-  SSL_load_error_strings();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
-
-  /* create the SSL server context */
-  *ctx = SSL_CTX_new(SSLv23_method());
-  if (!(*ctx))
-    die("SSL_CTX_new()");
-
-  /* Load certificate and private key files, and check consistency */
-  if (certfile && keyfile) {
-    if (SSL_CTX_use_certificate_file(*ctx, certfile,  SSL_FILETYPE_PEM) != 1)
-      LOG_KILL("SSL_CTX_use_certificate_file failed");
-
-    if (SSL_CTX_use_PrivateKey_file(*ctx, keyfile, SSL_FILETYPE_PEM) != 1)
-      LOG_KILL("SSL_CTX_use_PrivateKey_file failed");
-
-    /* Make sure the key and certificate file match. */
-    if (SSL_CTX_check_private_key(*ctx) != 1)
-      LOG_KILL("SSL_CTX_check_private_key failed");
-    else
-      printf("certificate and private key loaded and verified\n");
-  }
-
-  /* Recommended to avoid SSLv2 & SSLv3 */
-  SSL_CTX_set_options(*ctx, SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);
-}
+/* =================================================== */
 
 /* =========================
- *  static
+ *  getter
  * ========================= */
 
-static ssl_status_t get_sslstatus(SSL* ssl, int n)
+const char * peer_get_addr(const peer_t * const peer)
 {
-  switch (SSL_get_error(ssl, n))
-  {
-    case SSL_ERROR_NONE:
-      return SSLSTATUS_OK;
-    case SSL_ERROR_WANT_WRITE:
-    case SSL_ERROR_WANT_READ:
-      return SSLSTATUS_WANT_IO;
-    case SSL_ERROR_ZERO_RETURN:
-    case SSL_ERROR_SYSCALL:
-    default:
-      return SSLSTATUS_FAIL;
-  }
+  static char __address_str[INET_ADDRSTRLEN + 16];
+  char        __str_peer_ipv4[INET_ADDRSTRLEN];
+  inet_ntop(AF_INET, &peer->address.sin_addr, __str_peer_ipv4, INET_ADDRSTRLEN);
+  snprintf(__address_str, INET_ADDRSTRLEN + 15,
+      "%s:%d", __str_peer_ipv4, ntohs(peer->address.sin_port));
+
+  return __address_str;
 }
 
-/* Process SSL bytes received from the peer. The data needs to be fed into the
-   SSL object to be unencrypted.  On success, returns 0, on SSL error -1. */
-static int push_encrypted_bytes(peer_t *peer, uint8_t * src, ssize_t len)
+
+/* =================================================== */
+
+/* =========================
+ *  static implementation
+ * ========================= */
+
+static int peer_encrypt(peer_t *peer, const uint8_t *buf_to_encrypt, ssize_t buf_sz)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];
-  ssl_status_t status;
-  int n;
+  int status;
+
+  if (!SSL_is_init_finished(peer->ssl))
+    return 0;
+
+  int written = 0;
+  while (written < buf_sz) {
+    int ret = SSL_write(peer->ssl, buf_to_encrypt + written, buf_sz - written);
+    status = SSL_get_error(peer->ssl, ret);
+
+    if (ret > 0) {
+      written += ret;
+
+      /* take the output of the SSL object
+       * and queue it for socket write */
+      do {
+        ret = BIO_read(peer->wbio, buf, sizeof(buf));
+        if (ret > 0)
+          peer_queue_to_write(peer, buf, ret);
+        else if (!BIO_should_retry(peer->wbio))
+          return -1;
+      } while (ret > 0);
+    }
+
+    if (ssl_status_fail(status))
+      return -1;
+
+    if (ret == 0)
+      break;
+  }
+  return 0;
+}
+
+static int peer_decrypt(peer_t *peer, uint8_t * src, ssize_t len)
+{
+  uint8_t buf[DEFAULT_BUF_SIZE];
+  int status;
+  int ret;
 
   while (len > 0) {
-    n = BIO_write(peer->rbio, src, len);
+    ret = BIO_write(peer->rbio, src, len);
 
-    if (n <= 0)
-      return -1; /* assume bio write failure is unrecoverable */
+    if (ret <= 0)
+      return -1; // bio failure is irrecoverable
 
-    src += n;
-    len -= n;
+    src += ret;
+    len -= ret;
 
     if (!SSL_is_init_finished(peer->ssl)) {
-      if (peer_do_handshake(peer) == SSLSTATUS_FAIL)
+      if (peer_do_handshake(peer) == -1)
         return -1;
       if (!SSL_is_init_finished(peer->ssl))
         return 0;
     }
 
-    /* The encrypted data is now in the input bio so now we can perform actual
-     * read of unencrypted data. */
-
+    // read cleartext
     do {
-      n = SSL_read(peer->ssl, buf, sizeof(buf));
-      if (n > 0)
-        peer_queue_to_process(peer, buf, n);
-    } while (n > 0);
+      ret = SSL_read(peer->ssl, buf, sizeof(buf));
+      if (ret > 0)
+        peer_queue_to_process(peer, buf, ret);
+    } while (ret > 0);
 
-    status = get_sslstatus(peer->ssl, n);
+    status = SSL_get_error(peer->ssl, ret);
 
-    /* Did SSL request to write bytes? This can happen if peer has requested SSL
-     * renegotiation. */
-    if (status == SSLSTATUS_WANT_IO)
+    // may have renegotiation
+    if (ssl_status_want_io(status))
       do {
-        n = BIO_read(peer->wbio, buf, sizeof(buf));
-        if (n > 0)
-          peer_queue_to_decrypt(peer, buf, n);
+        ret = BIO_read(peer->wbio, buf, sizeof(buf));
+        if (ret > 0)
+          peer_queue_to_write(peer, buf, ret);
         else if (!BIO_should_retry(peer->wbio))
           return -1;
-      } while (n > 0);
+      } while (ret > 0);
 
-    if (status == SSLSTATUS_FAIL)
+    if (ssl_status_fail(status))
       return -1;
   }
 
