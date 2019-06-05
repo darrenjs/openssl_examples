@@ -213,6 +213,9 @@ bool peer_want_read(peer_t *peer) { return peer->process_sz > 0; }
  *  io funcs
  * ========================= */
 
+bool peer_finished_handshake(const peer_t *peer)
+{ return SSL_is_init_finished(peer->ssl); }
+
 int peer_do_handshake(peer_t *peer)
 {
   uint8_t buf[DEFAULT_BUF_SIZE];

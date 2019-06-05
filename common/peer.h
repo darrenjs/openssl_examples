@@ -46,6 +46,7 @@ bool peer_want_write(peer_t *peer);
 bool peer_want_read(peer_t *peer);
 
 // io funcs
+bool peer_finished_handshake(const peer_t *peer);
 int peer_do_handshake(peer_t *peer);
 int peer_recv(peer_t *peer);
 int peer_send(peer_t *peer);
