@@ -60,6 +60,7 @@ int main(int argc, char **argv)
   fcntl(STDIN_FILENO, F_SETFL, flag);
 
   peer_create(&server, client_ctx, false);
+  bool shown_certificate = false;
 
   /* Specify socket address */
   struct sockaddr_in addr;
@@ -75,8 +76,6 @@ int main(int argc, char **argv)
   peer_do_handshake(&server);
 
   fprintf(stdout, "Connected to peer at %s\n", peer_get_addr(&server));
-  peer_show_certificate(stdout, &server);
-  fprintf(stdout, "Server pubkey at %p\n", peer_get_pubkey(&server));
   fd_set read_fds;
   fd_set write_fds;
   fd_set except_fds;
@@ -114,6 +113,11 @@ int main(int argc, char **argv)
             if (peer_recv(&server) != 0) {
               peer_close(&server);
               LOG_KILL("failed to receive from sever");
+            }
+            if (!shown_certificate) {
+              peer_show_certificate(stdout, &server);
+              fprintf(stdout, "Server pubkey at %p\n", peer_get_pubkey(&server));
+              shown_certificate = true;
             }
           }
           if (FD_ISSET(server.socket, &write_fds)) {
