@@ -21,8 +21,8 @@ certs: ## gen certificates
 	openssl req -new -key client.key -out client.csr # generate Certificate Signing Request
 	openssl x509 -req -in client.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out client.crt -days 500 -sha256 # sign the damn thing
 	rm *.csr
-	cp server.crt server.key server_src
-	cp client.crt client.key client_src
+	cp server.crt server.key rootCA.pem server_src
+	cp client.crt client.key rootCA.pem client_src
 
 .PHONY:client_test
 client_test: ## run default openssl client
