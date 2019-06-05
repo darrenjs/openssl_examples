@@ -11,21 +11,24 @@ clean: ## clean all the targets
 
 .PHONY: certs
 certs: ## gen certificates
-	openssl genrsa -des3 -passout pass:ABCD -out server.pass.key 2048
-	openssl rsa -passin pass:ABCD -in server.pass.key -out server.key
-	rm -f server.pass.key
-	openssl req -new -key server.key -out server.csr
-	openssl x509 -req -sha256 -days 365 -in server.csr -signkey server.key -out server.crt
-	rm -f server.csr
-	openssl genrsa -des3 -passout pass:ABCD -out client.pass.key 2048
-	openssl rsa -passin pass:ABCD -in client.pass.key -out client.key
-	rm -f client.pass.key
-	openssl req -new -key client.key -out client.csr
-	openssl x509 -req -sha256 -days 365 -in client.csr -signkey client.key -out client.crt
-	rm -f client.csr
+	openssl genrsa -out rootCA.key 2048 # generates rootCA key
+	openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 1024 -out rootCA.pem # self sign
+	openssl genrsa -out server.key 2048 # generate server key
+	openssl req -new -key server.key -out server.csr # generate Certificate Signing Request
+	openssl x509 -req -in server.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out server.crt -days 500 -sha256 # sign the damn thing
+	openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 1024 -out rootCA.pem # self sign
+	openssl genrsa -out client.key 2048 # generate client key
+	openssl req -new -key client.key -out client.csr # generate Certificate Signing Request
+	openssl x509 -req -in client.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out client.crt -days 500 -sha256 # sign the damn thing
+	rm *.csr
 	cp server.crt server.key server_src
 	cp client.crt client.key client_src
+
+.PHONY:client_test
+client_test: ## run default openssl client
+	openssl s_client -connect 127.0.0.1:55555 -msg -debug -state -showcerts
 
 .PHONY: help
 help:	## display options
 	@grep -E '^[a-zA-Z_-]+:.*## .*' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+
