@@ -72,52 +72,17 @@ int main(int argc, char **argv)
   if (peer_connect(&server, &addr) != 0)
     LOG_KILL("failed to connect to peer");
 
+  if (peer_do_nonblock_handshake(&server) == -1)
+    LOG_KILL("failed to do handshake");
 
-  fd_set read_fds;
-  fd_set write_fds;
-  fd_set except_fds;
-
-  /* finish handshake */
-  peer_do_handshake(&server);
-  while (!peer_finished_handshake(&server)) {
-    int high_sock = build_fd_sets(&server, &read_fds, &write_fds, &except_fds);
-    int activity  = select(high_sock + 1, &read_fds, &write_fds, &except_fds, NULL);
-
-    switch (activity) {
-      case -1:
-        perror("select");
-        LOG_KILL("failed to select");
-        break;
-
-      case 0:
-        LOG("select returned 0");
-        break;
-
-      default:
-        if (peer_valid(&server)) {
-          if (FD_ISSET(server.socket, &read_fds)) {
-            if (peer_recv(&server) != 0) {
-              peer_close(&server);
-              LOG_KILL("failed to receive from sever");
-            }
-          }
-          if (FD_ISSET(server.socket, &write_fds)) {
-            if (peer_send(&server) != 0) {
-              peer_close(&server);
-              LOG_KILL("failed to send to sever");
-            }
-          }
-          if (FD_ISSET(server.socket, &except_fds)) {
-            LOG_KILL("exception on server socket");
-          }
-        }
-    }
-  }
 
   fprintf(stdout, "Connected to peer at %s\n", peer_get_addr(&server));
   peer_show_certificate(stdout, &server);
   fprintf(stdout, "Server pubkey at %p\n", peer_get_pubkey(&server));
 
+  fd_set read_fds;
+  fd_set write_fds;
+  fd_set except_fds;
   /* event loop */
   while (1) {
     if (peer_valid(&server)) {

@@ -48,6 +48,7 @@ bool peer_want_read(peer_t *peer);
 // io funcs
 bool peer_finished_handshake(const peer_t *peer);
 int peer_do_handshake(peer_t *peer);
+int peer_do_nonblock_handshake(peer_t *peer);
 int peer_recv(peer_t *peer);
 int peer_send(peer_t *peer);
 int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz);

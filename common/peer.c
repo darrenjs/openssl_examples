@@ -238,6 +238,56 @@ int peer_do_handshake(peer_t *peer)
   return (!ssl_status_fail(status)) ? 0 : -1;
 }
 
+int peer_do_nonblock_handshake(peer_t *peer)
+{
+  fd_set read_fds;
+  fd_set write_fds;
+  fd_set except_fds;
+
+  peer_do_handshake(peer);
+  while (!peer_finished_handshake(peer)) {
+    FD_ZERO(&read_fds); FD_SET(peer->socket, &read_fds);
+    FD_ZERO(&write_fds);
+    if (peer_want_write(peer))
+      FD_SET(peer->socket, &write_fds);
+    FD_ZERO(&except_fds); FD_SET(peer->socket, &except_fds);
+
+    int activity = select(peer->socket + 1, &read_fds, &write_fds, &except_fds, NULL);
+    switch (activity) {
+      case -1:
+        perror("select");
+        LOG("failed to select");
+        return -1;
+
+      case 0:
+        LOG("select returned 0");
+        break;
+
+      default:
+        if (FD_ISSET(peer->socket, &read_fds)) {
+          if (peer_recv(peer) != 0) {
+            LOG("failed to receive from server");
+            peer_close(peer);
+            return -1;
+          }
+        }
+        if (FD_ISSET(peer->socket, &write_fds)) {
+          if (peer_send(peer) != 0) {
+            LOG("failed to sent to server");
+            peer_close(peer);
+            return -1;
+          }
+        }
+        if (FD_ISSET(peer->socket, &except_fds)) {
+          LOG("exception on peer socket");
+          return -1;
+        }
+    }
+  }
+
+  return 0;
+}
+
 
 /* Read encrypted bytes from socket. */
 int peer_recv(peer_t *peer)
