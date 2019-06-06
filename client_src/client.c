@@ -78,7 +78,7 @@ int main(int argc, char **argv)
 
   fprintf(stdout, "Connected to peer at %s\n", peer_get_addr(&server));
   peer_show_certificate(stdout, &server);
-  fprintf(stdout, "Server pubkey at %p\n", peer_get_pubkey(&server));
+  fprintf(stdout, "Server id: %lu\n", peer_get_id(&server));
 
   fd_set read_fds;
   fd_set write_fds;
@@ -90,6 +90,7 @@ int main(int argc, char **argv)
         handle_received_message(&server);
       }
     }
+
     int high_sock = build_fd_sets(&server, &read_fds, &write_fds, &except_fds);
     int activity  = select(high_sock + 1, &read_fds, &write_fds, &except_fds, NULL);
 
@@ -198,7 +199,7 @@ int handle_read_from_stdin(peer_t *peer)
 
 int  handle_received_message(peer_t *peer)
 {
-  printf("%.*s", (int)peer->process_sz, (char *) peer->process_buf);
+  fprintf(stdout, "%lu: %.*s", peer_get_id(peer), (int)peer->process_sz, (char *) peer->process_buf);
   peer->process_sz = 0;
   return 0;
 }

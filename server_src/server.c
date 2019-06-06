@@ -198,7 +198,7 @@ int handle_read_from_stdin(peer_t *peer)
 
 int  handle_received_message(peer_t *peer)
 {
-  printf("%.*s", (int)peer->process_sz, (char *) peer->process_buf);
+  fprintf(stdout, "%lu: %.*s", peer_get_id(peer), (int)peer->process_sz, (char *) peer->process_buf);
   peer->process_sz = 0;
   return 0;
 }
@@ -259,9 +259,9 @@ int handle_new_connection()
     return -1;
   }
 
-  fprintf(stderr, "Accepted connection on %s\n", peer_get_addr(&client));
+  fprintf(stderr, "\nAccepted connection on %s\n", peer_get_addr(&client));
   peer_show_certificate(stdout, &client);
-  fprintf(stdout, "Client pubkey at %p\n", peer_get_pubkey(&client));
+  fprintf(stdout, "Client id: %lu\n", peer_get_id(&client));
 
   return 0;
 }

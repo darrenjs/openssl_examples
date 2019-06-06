@@ -56,7 +56,7 @@ int peer_prepare_message_to_send(peer_t *peer, const uint8_t * buf, ssize_t sz);
 // crypto funcs
 EVP_PKEY *peer_get_pubkey(const peer_t * const);
 void      peer_show_certificate(FILE *stream, const peer_t * const);
-int64_t   peer_get_id(const peer_t * const);
+uint64_t  peer_get_id(const peer_t * const);
 
 // getter
 const char * peer_get_addr(const peer_t * const); // static mem
