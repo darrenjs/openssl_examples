@@ -63,13 +63,12 @@ void show_certificates(FILE *stream, SSL *ssl)
     return;
   }
 
-  fprintf(stderr, "Server certificates:\n");
   char *line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
-  fprintf(stderr, "Subject: %s\n", line);
+  fprintf(stream, "Subject: %s\n", line);
   free(line);
 
   line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
-  fprintf(stderr, "Issuer: %s\n", line);
+  fprintf(stream, "Issuer: %s\n", line);
   free(line);
   X509_free(cert);
 }
