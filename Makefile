@@ -28,6 +28,10 @@ certs: ## gen certificates
 client_test: ## run default openssl client
 	openssl s_client -connect 127.0.0.1:55555 -msg -debug -state -showcerts
 
+.PHONY:server_test
+server_test: ## run default openssl server
+	openssl s_server -port 55555 -cert server.crt -key server.key -msg -debug -state -verify 1
+
 .PHONY: help
 help:	## display options
 	@grep -E '^[a-zA-Z_-]+:.*## .*' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
