@@ -1,4 +1,4 @@
-# openssl_nonblocking_connection
+# openssl-nonblocking-connection
 
 This repository (fork from [darenjs/openssl_examples](https://github.com/darenjs/openssl_examples)) serves as an example of how to use OpenSSL's C API, paired with non-blockign socket programming to establish a secure connection between two nodes.
 
