@@ -64,7 +64,8 @@ Check `common/config.h` for those values (and change them if you will).
 
 Future Directions
 -------
-None.
+Right now, the server-side certificate verification is dummy. However, I ain't got the time to fix it now.
+
 I have another repo, [secure-chat](https://github.com/BSDinis/secure-chat) that uses this interface to implement a toy chat service with TLS.
 Maybe, one day, if I have the time, I'll make this library better.
 
