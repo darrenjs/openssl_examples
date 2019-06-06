@@ -18,6 +18,7 @@
 *.csr
 *.key
 *.pem
+*.srl
 
 # Prerequisites
 *.d

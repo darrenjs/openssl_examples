@@ -4,14 +4,16 @@
 
 #include "ssl_util.h"
 #include <unistd.h>
+#include <stdbool.h>
+#include "macros.h"
 
-static int init_ssl_ctx(SSL_CTX **, const SSL_METHOD *);
+static int init_ssl_ctx(SSL_CTX **, bool server);
 
 int init_client_ssl_ctx(SSL_CTX **ctx_ptr)
-{ return init_ssl_ctx(ctx_ptr, TLS_client_method()); }
+{ return init_ssl_ctx(ctx_ptr, false); }
 
 int init_server_ssl_ctx(SSL_CTX **ctx_ptr)
-{ return init_ssl_ctx(ctx_ptr, TLS_server_method()); }
+{ return init_ssl_ctx(ctx_ptr, true); }
 
 int close_ssl_ctx(SSL_CTX *ctx)
 {
@@ -61,18 +63,25 @@ void show_certificates(FILE *stream, SSL *ssl)
     return;
   }
 
-  fprintf(stderr, "Server certificates:\n");
   char *line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
-  fprintf(stderr, "Subject: %s\n", line);
+  fprintf(stream, "Subject: %s\n", line);
   free(line);
 
   line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
-  fprintf(stderr, "Issuer: %s\n", line);
+  fprintf(stream, "Issuer: %s\n", line);
   free(line);
   X509_free(cert);
 }
 
-static int init_ssl_ctx(SSL_CTX **ctx_ptr, const SSL_METHOD *method)
+static int dummy_verify_cb(int ok, X509_STORE_CTX *ctx)
+{
+  /*
+   * ATTENTION: this verification is dummy
+   * should not be used in production
+   */
+  return 1;
+}
+static int init_ssl_ctx(SSL_CTX **ctx_ptr, bool server)
 {
   SSL_library_init();
 
@@ -80,15 +89,25 @@ static int init_ssl_ctx(SSL_CTX **ctx_ptr, const SSL_METHOD *method)
   SSL_load_error_strings();
   ERR_load_crypto_strings();
 
-  (*ctx_ptr) = SSL_CTX_new(method);
+  (*ctx_ptr) = SSL_CTX_new(server ? TLS_server_method() : TLS_client_method());
 
   if ((*ctx_ptr) == NULL) {
     ssl_perror("Failed to create CTX\n");
     return -1;
   }
 
-  //int mode = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-  //SSL_CTX_set_verify((*ctx_ptr), mode, NULL);
+  if (SSL_CTX_set_default_verify_file(*ctx_ptr) == 0) {
+    ssl_perror("Failed to set default verify file");
+    return -1;
+  }
+  if (SSL_CTX_set_default_verify_dir(*ctx_ptr) == 0) {
+    ssl_perror("Failed to set default verify dir");
+    return -1;
+  }
+
+  int mode = server ?  SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE : SSL_VERIFY_NONE;
+  SSL_CTX_set_verify((*ctx_ptr), mode, server ? dummy_verify_cb : NULL);
+  SSL_CTX_set_verify_depth((*ctx_ptr), 1);
 
   // disable SSLv23
   SSL_CTX_set_options(*ctx_ptr, SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);

@@ -254,6 +254,14 @@ int handle_new_connection()
     return -1;
   }
 
+  if (peer_do_nonblock_handshake(&client) != 0) {
+    LOG("failed to do handshake");
+    return -1;
+  }
+
   fprintf(stderr, "Accepted connection on %s\n", peer_get_addr(&client));
+  peer_show_certificate(stdout, &client);
+  fprintf(stdout, "Client pubkey at %p\n", peer_get_pubkey(&client));
+
   return 0;
 }

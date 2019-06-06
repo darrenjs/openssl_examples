@@ -72,15 +72,17 @@ int main(int argc, char **argv)
   if (peer_connect(&server, &addr) != 0)
     LOG_KILL("failed to connect to peer");
 
-  peer_do_handshake(&server);
+  if (peer_do_nonblock_handshake(&server) == -1)
+    LOG_KILL("failed to do handshake");
 
 
   fprintf(stdout, "Connected to peer at %s\n", peer_get_addr(&server));
+  peer_show_certificate(stdout, &server);
+  fprintf(stdout, "Server pubkey at %p\n", peer_get_pubkey(&server));
 
   fd_set read_fds;
   fd_set write_fds;
   fd_set except_fds;
-
   /* event loop */
   while (1) {
     if (peer_valid(&server)) {
