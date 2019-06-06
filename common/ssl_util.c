@@ -5,6 +5,7 @@
 #include "ssl_util.h"
 #include <unistd.h>
 #include <stdbool.h>
+#include "macros.h"
 
 static int init_ssl_ctx(SSL_CTX **, bool server);
 
@@ -73,6 +74,14 @@ void show_certificates(FILE *stream, SSL *ssl)
   X509_free(cert);
 }
 
+static int dummy_verify_cb(int ok, X509_STORE_CTX *ctx)
+{
+  /*
+   * ATTENTION: this verification is dummy
+   * should not be used in production
+   */
+  return 1;
+}
 static int init_ssl_ctx(SSL_CTX **ctx_ptr, bool server)
 {
   SSL_library_init();
@@ -88,8 +97,18 @@ static int init_ssl_ctx(SSL_CTX **ctx_ptr, bool server)
     return -1;
   }
 
+  if (SSL_CTX_set_default_verify_file(*ctx_ptr) == 0) {
+    ssl_perror("Failed to set default verify file");
+    return -1;
+  }
+  if (SSL_CTX_set_default_verify_dir(*ctx_ptr) == 0) {
+    ssl_perror("Failed to set default verify dir");
+    return -1;
+  }
+
   int mode = server ?  SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE : SSL_VERIFY_NONE;
-  SSL_CTX_set_verify((*ctx_ptr), mode, NULL);
+  SSL_CTX_set_verify((*ctx_ptr), mode, server ? dummy_verify_cb : NULL);
+  SSL_CTX_set_verify_depth((*ctx_ptr), 1);
 
   // disable SSLv23
   SSL_CTX_set_options(*ctx_ptr, SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
