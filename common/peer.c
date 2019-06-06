@@ -356,6 +356,40 @@ void peer_show_certificate(FILE *stream, const peer_t * const peer)
 }
 
 
+// get id
+int64_t peer_get_id(const peer_t * const peer)
+{
+  if (!peer) return -1;
+
+  EVP_PKEY * key = peer_get_pubkey(peer);
+  if (!key) return -1;
+
+  uint8_t buffer[32];
+  size_t  len = 32;
+  if (EVP_PKEY_get_raw_public_key(key, buffer, &len) != 1) {
+    LOG("failed to get raw public key");
+    EVP_PKEY_free(key);
+    return -1;
+  }
+
+  // FIXME (do SHA-256 to avoid collisions better) (also abstract)
+  uint8_t bytes[8] = {
+    buffer[7] ^ buffer[15] ^ buffer[23] ^ buffer[31], // byte 7
+    buffer[6] ^ buffer[14] ^ buffer[22] ^ buffer[30], // byte 6
+    buffer[5] ^ buffer[13] ^ buffer[21] ^ buffer[29], // byte 5
+    buffer[4] ^ buffer[12] ^ buffer[20] ^ buffer[28], // byte 4
+    buffer[3] ^ buffer[11] ^ buffer[19] ^ buffer[27], // byte 3
+    buffer[2] ^ buffer[10] ^ buffer[18] ^ buffer[26], // byte 2
+    buffer[1] ^ buffer[9]  ^ buffer[17] ^ buffer[25], // byte 1
+    buffer[0] ^ buffer[8]  ^ buffer[16] ^ buffer[24]  // byte 0
+  };
+
+  uint64_t uid = 0;
+  memcpy(&uid, bytes, sizeof(uid));
+  return (int64_t) uid;
+}
+
+
 /* =================================================== */
 
 /* =========================
