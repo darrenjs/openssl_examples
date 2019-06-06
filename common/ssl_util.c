@@ -4,14 +4,15 @@
 
 #include "ssl_util.h"
 #include <unistd.h>
+#include <stdbool.h>
 
-static int init_ssl_ctx(SSL_CTX **, const SSL_METHOD *);
+static int init_ssl_ctx(SSL_CTX **, bool server);
 
 int init_client_ssl_ctx(SSL_CTX **ctx_ptr)
-{ return init_ssl_ctx(ctx_ptr, TLS_client_method()); }
+{ return init_ssl_ctx(ctx_ptr, false); }
 
 int init_server_ssl_ctx(SSL_CTX **ctx_ptr)
-{ return init_ssl_ctx(ctx_ptr, TLS_server_method()); }
+{ return init_ssl_ctx(ctx_ptr, true); }
 
 int close_ssl_ctx(SSL_CTX *ctx)
 {
@@ -72,7 +73,7 @@ void show_certificates(FILE *stream, SSL *ssl)
   X509_free(cert);
 }
 
-static int init_ssl_ctx(SSL_CTX **ctx_ptr, const SSL_METHOD *method)
+static int init_ssl_ctx(SSL_CTX **ctx_ptr, bool server)
 {
   SSL_library_init();
 
@@ -80,15 +81,15 @@ static int init_ssl_ctx(SSL_CTX **ctx_ptr, const SSL_METHOD *method)
   SSL_load_error_strings();
   ERR_load_crypto_strings();
 
-  (*ctx_ptr) = SSL_CTX_new(method);
+  (*ctx_ptr) = SSL_CTX_new(server ? TLS_server_method() : TLS_client_method());
 
   if ((*ctx_ptr) == NULL) {
     ssl_perror("Failed to create CTX\n");
     return -1;
   }
 
-  //int mode = SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-  //SSL_CTX_set_verify((*ctx_ptr), mode, NULL);
+  int mode = server ?  SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE : SSL_VERIFY_NONE;
+  SSL_CTX_set_verify((*ctx_ptr), mode, NULL);
 
   // disable SSLv23
   SSL_CTX_set_options(*ctx_ptr, SSL_OP_ALL | SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
