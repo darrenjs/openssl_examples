@@ -35,6 +35,8 @@ Or on MacOS:
 
 Or just try the makefile, for Linux platforms.
 
+On Ubuntu systems you may need to run `sudo apt install libssl-dev` to install OpenSSL headers.
+
 Running
 -------
 
