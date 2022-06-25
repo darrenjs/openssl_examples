@@ -1,28 +1,29 @@
 #
 # Copyright (c) 2017 Darren Smith
 #
-# wampcc is free software; you can redistribute it and/or modify
-# it under the terms of the MIT license. See LICENSE for details.
+# ssl_examples is free software; you can redistribute it and/or modify it under
+# the terms of the MIT license. See LICENSE for details.
 #
 
 
-CFLAGS += -MMD -MP -Wall -O0 -g3 -ggdb
+CFLAGS += -MMD -MP -Wall -Wextra -O0 -g3 -ggdb
 
 LDLIBS += -lcrypto -lssl
 
-# default: callee
-
 all_srcs := $(shell find . -name \*.c)
-app_srcs := $(shell find . -name \*.c)
+
 
 all   : apps
-apps  : $(app_srcs:%.c=%)
+apps  : $(all_srcs:%.c=%)
 test  : obj/test/main ; @$<
-clean : ; rm -f $(app_srcs:%.c=%) $(app_srcs:%.c=%.d)
+clean : ; rm -f $(all_srcs:%.c=%) $(all_srcs:%.c=%.d)
 
-#-include $(all_srcs:%.cc=%.d)
 .PRECIOUS : %.o
 
-%.o            : %.cc ; $(COMPILE.cpp) $(OUTPUT_OPTION) $<
-%.o            : %.c ; $(COMPILE.c) $(OUTPUT_OPTION) $<
-%              : %.o ; @$(LINK.cpp) $(OUTPUT_OPTION) $^  $(LDLIBS)
+ssl_server_nonblock: ssl_server_nonblock.c common.h
+	$(CC) $(CFLAGS) ssl_server_nonblock.c $(OUTPUT_OPTION) $(LDLIBS)
+
+ssl_client_nonblock: ssl_client_nonblock.c common.h
+	$(CC) $(CFLAGS) ssl_client_nonblock.c $(OUTPUT_OPTION) $(LDLIBS)
+
+#-include $(all_srcs:%.c=%.d)

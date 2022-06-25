@@ -1,8 +1,8 @@
 /*
-Copyright (c) 2017 Darren Smith
+  Copyright (c) 2017 Darren Smith
 
-ssl_examples is free software; you can redistribute it and/or modify
-it under the terms of the MIT license. See LICENSE for details.
+  ssl_examples is free software; you can redistribute it and/or modify
+  it under the terms of the MIT license. See LICENSE for details.
 */
 
 #include <openssl/bio.h>
@@ -63,6 +63,9 @@ struct ssl_client
   char* encrypt_buf;
   size_t encrypt_len;
 
+  /* Store the previous state string */
+  const char * last_state;
+
   /* Method to invoke when unencrypted bytes are available. */
   void (*io_on_read)(char *buf, size_t len);
 } client;
@@ -70,6 +73,7 @@ struct ssl_client
 /* This enum contols whether the SSL connection needs to initiate the SSL
  * handshake. */
 enum ssl_mode { SSLMODE_SERVER, SSLMODE_CLIENT };
+
 
 void ssl_client_init(struct ssl_client *p,
                      int fd,
@@ -93,6 +97,7 @@ void ssl_client_init(struct ssl_client *p,
   p->io_on_read = print_unencrypted_data;
 }
 
+
 void ssl_client_cleanup(struct ssl_client *p)
 {
   SSL_free(p->ssl);   /* free the SSL object and its BIO's */
@@ -100,13 +105,16 @@ void ssl_client_cleanup(struct ssl_client *p)
   free(p->encrypt_buf);
 }
 
+
 int ssl_client_want_write(struct ssl_client *cp) {
   return (cp->write_len>0);
 }
 
+
 /* Obtain the return value of an SSL operation and convert into a simplified
  * error code, which is easier to examine for failure. */
 enum sslstatus { SSLSTATUS_OK, SSLSTATUS_WANT_IO, SSLSTATUS_FAIL};
+
 
 static enum sslstatus get_sslstatus(SSL* ssl, int n)
 {
@@ -124,6 +132,7 @@ static enum sslstatus get_sslstatus(SSL* ssl, int n)
   }
 }
 
+
 /* Handle request to send unencrypted data to the SSL.  All we do here is just
  * queue the data into the encrypt_buf for later processing by the SSL
  * object. */
@@ -134,6 +143,7 @@ void send_unencrypted_bytes(const char *buf, size_t len)
   client.encrypt_len += len;
 }
 
+
 /* Queue encrypted bytes. Should only be used when the SSL object has requested a
  * write operation. */
 void queue_encrypted_bytes(const char *buf, size_t len)
@@ -143,12 +153,38 @@ void queue_encrypted_bytes(const char *buf, size_t len)
   client.write_len += len;
 }
 
+
+void print_ssl_state()
+{
+  const char * current_state = SSL_state_string_long(client.ssl);
+  if (current_state != client.last_state) {
+    if (current_state)
+      printf("SSL-STATE: %s\n", current_state);
+    client.last_state = current_state;
+  }
+}
+
+
+void print_ssl_error()
+{
+  BIO *bio = BIO_new(BIO_s_mem());
+  ERR_print_errors(bio);
+  char *buf;
+  size_t len = BIO_get_mem_data(bio, &buf);
+  if (len > 0)
+    printf("SSL-ERROR: %s", buf);
+  BIO_free(bio);
+}
+
+
 enum sslstatus do_ssl_handshake()
 {
   char buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
 
+  print_ssl_state();
   int n = SSL_do_handshake(client.ssl);
+  print_ssl_state();
   status = get_sslstatus(client.ssl, n);
 
   /* Did SSL request to write bytes? */
@@ -259,6 +295,7 @@ int do_encrypt()
   return 0;
 }
 
+
 /* Read bytes from stdin and queue for later encryption. */
 void do_stdin_read()
 {
@@ -267,6 +304,7 @@ void do_stdin_read()
   if (n>0)
     send_unencrypted_bytes(buf, (size_t)n);
 }
+
 
 /* Read encrypted bytes from socket. */
 int do_sock_read()
@@ -279,6 +317,7 @@ int do_sock_read()
   else
     return -1;
 }
+
 
 /* Write encrypted bytes to the socket. */
 int do_sock_write()
@@ -295,19 +334,21 @@ int do_sock_write()
     return -1;
 }
 
+
 void ssl_init(const char * certfile, const char* keyfile)
 {
-  printf("initialising SSL\n");
-
   /* SSL library initialisation */
+
   SSL_library_init();
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
-  ERR_load_BIO_strings();
+#if OPENSSL_VERSION_MAJOR < 3
+  ERR_load_BIO_strings(); // deprecated since OpenSSL 3.0
+#endif
   ERR_load_crypto_strings();
 
   /* create the SSL server context */
-  ctx = SSL_CTX_new(SSLv23_method());
+  ctx = SSL_CTX_new(TLS_method());
   if (!ctx)
     die("SSL_CTX_new()");
 
@@ -325,6 +366,7 @@ void ssl_init(const char * certfile, const char* keyfile)
     else
       printf("certificate and private key loaded and verified\n");
   }
+
 
   /* Recommended to avoid SSLv2 & SSLv3 */
   SSL_CTX_set_options(ctx, SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);
