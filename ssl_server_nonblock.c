@@ -81,7 +81,7 @@ int main(int argc, char **argv)
 
       int revents = fdset[1].revents;
       if (revents & POLLIN)
-        if (do_sock_read() == -1)
+        if (do_sock_read(p_client) == -1)
           break;
       if (revents & POLLOUT)
         if (do_sock_write() == -1)
@@ -95,7 +95,7 @@ int main(int argc, char **argv)
       if (fdset[0].revents & POLLIN)
         do_stdin_read(p_client);
       if (client.encrypt_len>0)
-        do_encrypt();
+        do_encrypt(p_client);
     }
 
     close(fdset[1].fd);

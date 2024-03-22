@@ -145,18 +145,18 @@ static enum sslstatus get_sslstatus(SSL* ssl, int n)
 void send_unencrypted_bytes(struct ssl_client *p, const char *buf, size_t len)
 {
   p->encrypt_buf = (char*)realloc(p->encrypt_buf, p->encrypt_len + len);
-  memcpy(p->encrypt_buf+client.encrypt_len, buf, len);
+  memcpy(p->encrypt_buf+p->encrypt_len, buf, len);
   p->encrypt_len += len;
 }
 
 
 /* Queue encrypted bytes. Should only be used when the SSL object has requested a
  * write operation. */
-void queue_encrypted_bytes(const char *buf, size_t len)
+void queue_encrypted_bytes(struct ssl_client *p, const char *buf, size_t len)
 {
-  client.write_buf = (char*)realloc(client.write_buf, client.write_len + len);
-  memcpy(client.write_buf+client.write_len, buf, len);
-  client.write_len += len;
+  p->write_buf = (char*)realloc(p->write_buf, p->write_len + len);
+  memcpy(p->write_buf+p->write_len, buf, len);
+  p->write_len += len;
 }
 
 
@@ -183,23 +183,23 @@ void print_ssl_error()
 }
 
 
-enum sslstatus do_ssl_handshake()
+enum sslstatus do_ssl_handshake(struct ssl_client *p)
 {
   char buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
 
   print_ssl_state();
-  int n = SSL_do_handshake(client.ssl);
+  int n = SSL_do_handshake(p->ssl);
   print_ssl_state();
-  status = get_sslstatus(client.ssl, n);
+  status = get_sslstatus(p->ssl, n);
 
   /* Did SSL request to write bytes? */
   if (status == SSLSTATUS_WANT_IO)
     do {
-      n = BIO_read(client.wbio, buf, sizeof(buf));
+      n = BIO_read(p->wbio, buf, sizeof(buf));
       if (n > 0)
-        queue_encrypted_bytes(buf, n);
-      else if (!BIO_should_retry(client.wbio))
+        queue_encrypted_bytes(p, buf, n);
+      else if (!BIO_should_retry(p->wbio))
         return SSLSTATUS_FAIL;
     } while (n>0);
 
@@ -208,14 +208,14 @@ enum sslstatus do_ssl_handshake()
 
 /* Process SSL bytes received from the peer. The data needs to be fed into the
    SSL object to be unencrypted.  On success, returns 0, on SSL error -1. */
-int on_read_cb(char* src, size_t len)
+int on_read_cb(struct ssl_client *p, char* src, size_t len)
 {
   char buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
   int n;
 
   while (len > 0) {
-    n = BIO_write(client.rbio, src, len);
+    n = BIO_write(p->rbio, src, len);
 
     if (n<=0)
       return -1; /* assume bio write failure is unrecoverable */
@@ -223,10 +223,10 @@ int on_read_cb(char* src, size_t len)
     src += n;
     len -= n;
 
-    if (!SSL_is_init_finished(client.ssl)) {
-      if (do_ssl_handshake() == SSLSTATUS_FAIL)
+    if (!SSL_is_init_finished(p->ssl)) {
+      if (do_ssl_handshake(p) == SSLSTATUS_FAIL)
         return -1;
-      if (!SSL_is_init_finished(client.ssl))
+      if (!SSL_is_init_finished(p->ssl))
         return 0;
     }
 
@@ -234,21 +234,21 @@ int on_read_cb(char* src, size_t len)
      * read of unencrypted data. */
 
     do {
-      n = SSL_read(client.ssl, buf, sizeof(buf));
+      n = SSL_read(p->ssl, buf, sizeof(buf));
       if (n > 0)
         client.io_on_read(buf, (size_t)n);
     } while (n > 0);
 
-    status = get_sslstatus(client.ssl, n);
+    status = get_sslstatus(p->ssl, n);
 
     /* Did SSL request to write bytes? This can happen if peer has requested SSL
      * renegotiation. */
     if (status == SSLSTATUS_WANT_IO)
       do {
-        n = BIO_read(client.wbio, buf, sizeof(buf));
+        n = BIO_read(p->wbio, buf, sizeof(buf));
         if (n > 0)
-          queue_encrypted_bytes(buf, n);
-        else if (!BIO_should_retry(client.wbio))
+          queue_encrypted_bytes(p, buf, n);
+        else if (!BIO_should_retry(p->wbio))
           return -1;
       } while (n>0);
 
@@ -263,31 +263,31 @@ int on_read_cb(char* src, size_t len)
  * waiting data resides in encrypt_buf.  It needs to be passed into the SSL
  * object for encryption, which in turn generates the encrypted bytes that then
  * will be queued for later socket write. */
-int do_encrypt()
+int do_encrypt(struct ssl_client *p)
 {
   char buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
 
-  if (!SSL_is_init_finished(client.ssl))
+  if (!SSL_is_init_finished(p->ssl))
     return 0;
 
-  while (client.encrypt_len>0) {
-    int n = SSL_write(client.ssl, client.encrypt_buf, client.encrypt_len);
-    status = get_sslstatus(client.ssl, n);
+  while (p->encrypt_len>0) {
+    int n = SSL_write(p->ssl, p->encrypt_buf, p->encrypt_len);
+    status = get_sslstatus(p->ssl, n);
 
     if (n>0) {
       /* consume the waiting bytes that have been used by SSL */
-      if ((size_t)n<client.encrypt_len)
-        memmove(client.encrypt_buf, client.encrypt_buf+n, client.encrypt_len-n);
-      client.encrypt_len -= n;
-      client.encrypt_buf = (char*)realloc(client.encrypt_buf, client.encrypt_len);
+      if ((size_t)n<p->encrypt_len)
+        memmove(p->encrypt_buf, p->encrypt_buf+n, p->encrypt_len-n);
+      p->encrypt_len -= n;
+      p->encrypt_buf = (char*)realloc(p->encrypt_buf, p->encrypt_len);
 
       /* take the output of the SSL object and queue it for socket write */
       do {
-        n = BIO_read(client.wbio, buf, sizeof(buf));
+        n = BIO_read(p->wbio, buf, sizeof(buf));
         if (n > 0)
-          queue_encrypted_bytes(buf, n);
-        else if (!BIO_should_retry(client.wbio))
+          queue_encrypted_bytes(p, buf, n);
+        else if (!BIO_should_retry(p->wbio))
           return -1;
       } while (n>0);
     }
@@ -313,13 +313,13 @@ void do_stdin_read(struct ssl_client *p)
 
 
 /* Read encrypted bytes from socket. */
-int do_sock_read()
+int do_sock_read(struct ssl_client *p)
 {
   char buf[DEFAULT_BUF_SIZE];
-  ssize_t n = read(client.fd, buf, sizeof(buf));
+  ssize_t n = read(p->fd, buf, sizeof(buf));
 
   if (n>0)
-    return on_read_cb(buf, (size_t)n);
+    return on_read_cb(p, buf, (size_t)n);
   else
     return -1;
 }
