@@ -20,6 +20,8 @@
 #include <string.h>
 
 /* Global SSL context */
+/* A single global context is OK as long as the  *
+ * server only has a single set of certificates. */
 SSL_CTX *ctx;
 
 #define DEFAULT_BUF_SIZE 64
@@ -83,8 +85,10 @@ void ssl_client_init(struct ssl_client *p,
 
   p->fd = fd;
 
+  /* create 2 openssl BIO memory sockets */
   p->rbio = BIO_new(BIO_s_mem());
   p->wbio = BIO_new(BIO_s_mem());
+  /* create new ssl struct with certs etc. inherited from the global context */
   p->ssl = SSL_new(ctx);
 
   if (mode == SSLMODE_SERVER)
@@ -92,8 +96,10 @@ void ssl_client_init(struct ssl_client *p,
   else if (mode == SSLMODE_CLIENT)
     SSL_set_connect_state(p->ssl); /* ssl client mode */
 
+  /* attach the ssl BIO to the encryted side of the ssl engine */
   SSL_set_bio(p->ssl, p->rbio, p->wbio);
 
+  /* callback to print the unencrypted data from ssl to STDOUT on every read */
   p->io_on_read = print_unencrypted_data;
 }
 
