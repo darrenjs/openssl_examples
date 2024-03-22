@@ -33,6 +33,10 @@ Or on MacOS:
  gcc -Wall -O0 -g3 -std=c99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lssl -lcrypto  -o ssl_server_nonblock ssl_server_nonblock.c
  ```
 
+if you get link errors from ld for SSL
+```console
+    gcc ssl_server_nonblock.c -Wall -O0 -g3 -std=c99 -o ssl_server_nonblock -lcrypto -lssl
+
 Or just try the makefile, for Linux platforms.
 
 On Ubuntu systems you may need to run `sudo apt install libssl-dev` to install OpenSSL headers.
