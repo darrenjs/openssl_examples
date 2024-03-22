@@ -125,7 +125,7 @@ int main(int argc, char **argv)
   }
 
   close(fdset[1].fd);
-  print_ssl_state();
+  print_ssl_state(p_client);
   print_ssl_error();
   ssl_client_cleanup(p_client);
 

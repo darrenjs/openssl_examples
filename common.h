@@ -160,13 +160,13 @@ void queue_encrypted_bytes(struct ssl_client *p, const char *buf, size_t len)
 }
 
 
-void print_ssl_state()
+void print_ssl_state(struct ssl_client *p)
 {
-  const char * current_state = SSL_state_string_long(client.ssl);
-  if (current_state != client.last_state) {
+  const char * current_state = SSL_state_string_long(p->ssl);
+  if (current_state != p->last_state) {
     if (current_state)
       printf("SSL-STATE: %s\n", current_state);
-    client.last_state = current_state;
+    p->last_state = current_state;
   }
 }
 
@@ -188,9 +188,9 @@ enum sslstatus do_ssl_handshake(struct ssl_client *p)
   char buf[DEFAULT_BUF_SIZE];
   enum sslstatus status;
 
-  print_ssl_state();
+  print_ssl_state(p);
   int n = SSL_do_handshake(p->ssl);
-  print_ssl_state();
+  print_ssl_state(p);
   status = get_sslstatus(p->ssl, n);
 
   /* Did SSL request to write bytes? */
