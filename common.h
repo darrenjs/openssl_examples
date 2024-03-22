@@ -142,11 +142,11 @@ static enum sslstatus get_sslstatus(SSL* ssl, int n)
 /* Handle request to send unencrypted data to the SSL.  All we do here is just
  * queue the data into the encrypt_buf for later processing by the SSL
  * object. */
-void send_unencrypted_bytes(const char *buf, size_t len)
+void send_unencrypted_bytes(struct ssl_client *p, const char *buf, size_t len)
 {
-  client.encrypt_buf = (char*)realloc(client.encrypt_buf, client.encrypt_len + len);
-  memcpy(client.encrypt_buf+client.encrypt_len, buf, len);
-  client.encrypt_len += len;
+  p->encrypt_buf = (char*)realloc(p->encrypt_buf, p->encrypt_len + len);
+  memcpy(p->encrypt_buf+client.encrypt_len, buf, len);
+  p->encrypt_len += len;
 }
 
 
@@ -303,12 +303,12 @@ int do_encrypt()
 
 
 /* Read bytes from stdin and queue for later encryption. */
-void do_stdin_read()
+void do_stdin_read(struct ssl_client *p)
 {
   char buf[DEFAULT_BUF_SIZE];
   ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
   if (n>0)
-    send_unencrypted_bytes(buf, (size_t)n);
+    send_unencrypted_bytes(p, buf, (size_t)n);
 }
 
 

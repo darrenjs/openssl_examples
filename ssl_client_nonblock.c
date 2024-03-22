@@ -76,8 +76,11 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
+  struct ssl_client *p_client; /* struct per remote client      */
+  p_client=&client;            /* use the single global for now */
+
   ssl_init(0,0);
-  ssl_client_init(&client, sockfd, SSLMODE_CLIENT);
+  ssl_client_init(p_client, sockfd, SSLMODE_CLIENT);
 
   if (host_name)
     SSL_set_tlsext_host_name(client.ssl, host_name); // TLS SNI
@@ -94,7 +97,7 @@ int main(int argc, char **argv)
 
   while (1) {
     fdset[1].events &= ~POLLOUT;
-    fdset[1].events |= ssl_client_want_write(&client)? POLLOUT:0;
+    fdset[1].events |= ssl_client_want_write(p_client)? POLLOUT:0;
 
     int nready = poll(&fdset[0], 2, -1);
 
@@ -115,7 +118,7 @@ int main(int argc, char **argv)
       break;
 #endif
     if (fdset[0].revents & POLLIN)
-      do_stdin_read();
+      do_stdin_read(p_client);
     if (client.encrypt_len>0)
       if (do_encrypt() < 0)
         break;
@@ -124,7 +127,7 @@ int main(int argc, char **argv)
   close(fdset[1].fd);
   print_ssl_state();
   print_ssl_error();
-  ssl_client_cleanup(&client);
+  ssl_client_cleanup(p_client);
 
   return 0;
 }

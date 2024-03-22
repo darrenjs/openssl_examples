@@ -93,7 +93,7 @@ int main(int argc, char **argv)
         break;
 #endif
       if (fdset[0].revents & POLLIN)
-        do_stdin_read();
+        do_stdin_read(p_client);
       if (client.encrypt_len>0)
         do_encrypt();
     }
