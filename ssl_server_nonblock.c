@@ -44,6 +44,9 @@ int main(int argc, char **argv)
   fdset[0].fd = STDIN_FILENO;
   fdset[0].events = POLLIN;
 
+  struct ssl_client *p_client; /* struct per remote client      */
+  p_client=&client;            /* use the single global for now */
+
   ssl_init("server.crt", "server.key"); // see README to create these files
 
   while (1) {
@@ -53,7 +56,7 @@ int main(int argc, char **argv)
     if (clientfd < 0)
       die("accept()");
 
-    ssl_client_init(&client, clientfd, SSLMODE_SERVER);
+    ssl_client_init(p_client, clientfd, SSLMODE_SERVER);
 
     inet_ntop(peeraddr.sin_family, &peeraddr.sin_addr, str, INET_ADDRSTRLEN);
     printf("new connection from %s:%d\n", str, ntohs(peeraddr.sin_port));
@@ -69,7 +72,7 @@ int main(int argc, char **argv)
 
     while (1) {
       fdset[1].events &= ~POLLOUT;
-      fdset[1].events |= (ssl_client_want_write(&client)? POLLOUT : 0);
+      fdset[1].events |= (ssl_client_want_write(p_client)? POLLOUT : 0);
 
       int nready = poll(&fdset[0], 2, -1);
 
@@ -96,7 +99,7 @@ int main(int argc, char **argv)
     }
 
     close(fdset[1].fd);
-    ssl_client_cleanup(&client);
+    ssl_client_cleanup(p_client);
   }
 
   return 0;
