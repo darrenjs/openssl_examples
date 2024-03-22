@@ -84,7 +84,7 @@ int main(int argc, char **argv)
         if (do_sock_read(p_client) == -1)
           break;
       if (revents & POLLOUT)
-        if (do_sock_write() == -1)
+        if (do_sock_write(p_client) == -1)
           break;
       if (revents & (POLLERR | POLLHUP | POLLNVAL))
         break;

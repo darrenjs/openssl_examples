@@ -236,7 +236,7 @@ int on_read_cb(struct ssl_client *p, char* src, size_t len)
     do {
       n = SSL_read(p->ssl, buf, sizeof(buf));
       if (n > 0)
-        client.io_on_read(buf, (size_t)n);
+        p->io_on_read(buf, (size_t)n);
     } while (n > 0);
 
     status = get_sslstatus(p->ssl, n);
@@ -326,14 +326,14 @@ int do_sock_read(struct ssl_client *p)
 
 
 /* Write encrypted bytes to the socket. */
-int do_sock_write()
+int do_sock_write(struct ssl_client *p)
 {
-  ssize_t n = write(client.fd, client.write_buf, client.write_len);
+  ssize_t n = write(p->fd, p->write_buf, p->write_len);
   if (n>0) {
-    if ((size_t)n<client.write_len)
-      memmove(client.write_buf, client.write_buf+n, client.write_len-n);
-    client.write_len -= n;
-    client.write_buf = (char*)realloc(client.write_buf, client.write_len);
+    if ((size_t)n<p->write_len)
+      memmove(p->write_buf, p->write_buf+n, p->write_len-n);
+    p->write_len -= n;
+    p->write_buf = (char*)realloc(p->write_buf, p->write_len);
     return 0;
   }
   else
