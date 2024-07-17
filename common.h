@@ -41,9 +41,12 @@ void print_unencrypted_data(char *buf, size_t len) {
   printf("%.*s", (int)len, buf);
 }
 
-/* An instance of this object is created each time a client connection is
- * accepted. It stores the client file descriptor, the SSL objects, and data
- * which is waiting to be either written to socket or encrypted. */
+/* This structure manages the data and functions associated with a SSL/TLS
+   socket.  A single instance of this struct is used through out the example
+   because the server program, and client program, only allow a single
+   connection at any time. The struct stores the file descriptor, the SSL
+   objects, and data which is waiting to be either written to socket or
+   encrypted. */
 struct ssl_client
 {
   int fd;
@@ -371,4 +374,3 @@ void ssl_init(const char * certfile, const char* keyfile)
   /* Recommended to avoid SSLv2 & SSLv3 */
   SSL_CTX_set_options(ctx, SSL_OP_ALL|SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3);
 }
-
